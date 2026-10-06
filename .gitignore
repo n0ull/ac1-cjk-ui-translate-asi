@@ -1,0 +1,27 @@
+# 构建产物
+out/
+**/out/
+*.obj
+*.exe
+*.pdb
+*.ilk
+*.exp
+__pycache__/
+*.pyc
+
+# 字体与烘焙产物（不分发；由用户自备/现场生成）
+*.ttf
+*.ttc
+*.rgba
+*.dds
+
+# 运行期产物
+*.log
+AC1_CJK/
+AC1_CJK_Glyphs.bin
+AC1_CJK_Forge.txt
+AC1_Dict.txt
+
+# 临时
+*.tmp
+*.bak
