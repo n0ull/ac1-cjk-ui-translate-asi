@@ -5,7 +5,6 @@
 #include <windows.h>
 #include <stdarg.h>
 #include <stdio.h>
-#include <string.h>
 
 namespace ac1 {
 namespace core {
@@ -37,13 +36,7 @@ void make_stamp(char* out, int cap)
     out[cap - 1] = 0;
 }
 
-// 统一的写行内核：level 名字 + 日期时间 + 消息体
-//   autoErr=1：**渲染后的消息体**里含 "!!" 标记 ⇒ 提级到 ERR。
-//   判据必须落在消息体上、而不是格式串上：字典这类经日志出口注入的模块走的是
-//   g_log("%s", buf)，格式串恒为 "%s"，而 "[词典] !!" 里的标记写在 buf 里；
-//   直接调 log_line 的模块也把标记写在中文类别前缀之后 ⇒ 只看 fmt[0..1] 会让
-//   除 "!! " 开头那几处以外的所有事故行停在 INFO（实机日志 267 行全 INFO）。
-void write_line(const char* lvl, int autoErr, const char* fmt, va_list ap)
+void write_line(const char* lvl, const char* fmt, va_list ap)
 {
     ensure_cs();
     EnterCriticalSection(&g_cs);
@@ -60,9 +53,6 @@ void write_line(const char* lvl, int autoErr, const char* fmt, va_list ap)
     // MSVC 的 _vsnprintf 截断时把 count 字节写满、不补 NUL、返回负数（见 str.cpp 的工具链
     //   陷阱）⇒ 两条路都自己补 NUL。只清 body[0] 会把已写好的消息体整条丢掉、只剩前缀。
     if (n < 0 || (size_t)n >= sizeof(body) - 2) body[sizeof(body) - 2] = 0;
-    // 提级判据用 strstr 而不是比首字节：标记可以落在类别前缀之后（见本函数头）。
-    if (autoErr && strstr(body, "!!")) lvl = "ERR";
-
     SYSTEMTIME st;
     GetLocalTime(&st);
     char line[2208];
@@ -100,7 +90,7 @@ void init_log(const char* dir)
     int  built = 0;
     if (dir && dir[0]) {
         char sub[MAX_PATH], name[64];
-        built = path_join(sub, (int)sizeof(sub), dir, "AC1_CJK");
+        built = path_join(sub, (int)sizeof(sub), dir, "AC1_Runtime");
         if (built) {
             make_stamp(newStamp, (int)sizeof(newStamp));
             _snprintf(name, sizeof(name) - 1, "run_%s.log", newStamp);
@@ -138,10 +128,9 @@ const char* log_run_stamp() { return g_stamp; }
 
 void log_line(const char* fmt, ...)
 {
-    // 等级由 write_line 按消息体里的 "!!" 标记决定（autoErr=1），这里只给默认档。
     va_list ap;
     va_start(ap, fmt);
-    write_line("INFO", 1, fmt, ap);
+    write_line("INFO", fmt, ap);
     va_end(ap);
 }
 
@@ -149,7 +138,15 @@ void log_warn(const char* fmt, ...)
 {
     va_list ap;
     va_start(ap, fmt);
-    write_line("WARN", 0, fmt, ap); // 显式档：不受 "!!" 标记影响
+    write_line("WARN", fmt, ap);
+    va_end(ap);
+}
+
+void log_error(const char* fmt, ...)
+{
+    va_list ap;
+    va_start(ap, fmt);
+    write_line("ERR", fmt, ap);
     va_end(ap);
 }
 

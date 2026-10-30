@@ -146,7 +146,7 @@ void veh_dump(DWORD code, PVOID addr, DWORD tid)
     // 用 core::Str 组装（它保证不越界），再一次性 raw_write。
     Str s;
     str_init(&s, p, cap);
-    str_addf(&s, "\r\n[崩溃] ===== AC1_CJK 捕获 =====\r\n");
+    str_addf(&s, "\r\n[崩溃] ===== AC1_Runtime 捕获 =====\r\n");
     str_addf(&s, "[崩溃] code=%08X addr=%08X tid=%08X 转储=%ld\r\n", (unsigned)code,
              (unsigned)(ULONG_PTR)addr, (unsigned)tid, (long)g_crashDumps);
 
@@ -233,13 +233,11 @@ int hooktrace_register(const char* name, HookPolicy p)
     }
     reg_unlock(); // 唯一出口：本函数内不许再出现提前 return（否则后续登记会永久自旋）
     // 日志（含文件 I/O）放在锁外：自旋锁里只做几次存储。
-    if (full) log_line("[迹] !! 登记 %s 失败：槽位已满（%d）", nm, TRACE_SLOTS_MAX);
+    if (full) log_error("[迹] !! 登记 %s 失败：槽位已满（%d）", nm, TRACE_SLOTS_MAX);
     return slot;
 }
 
 // 已登记则原样返回、**不覆盖策略**（register 的幂等分支就是这个行为，无需在这里再扫一遍）。
-int hooktrace_ensure(const char* name, HookPolicy p) { return hooktrace_register(name, p); }
-
 HookPolicy hooktrace_default_policy()
 {
     HookPolicy p;
@@ -344,7 +342,7 @@ int hooktrace_veh_install(const char* dir)
         char sub[MAX_PATH], name[64];
         _snprintf(name, sizeof(name) - 1, "crash_%s.log", log_run_stamp()); // 与 run_<stamp>.log 同一轮
         name[sizeof(name) - 1] = 0;
-        if (path_join(sub, (int)sizeof(sub), dir, "AC1_CJK") &&
+        if (path_join(sub, (int)sizeof(sub), dir, "AC1_Runtime") &&
             path_join(g_crashPath, (int)sizeof(g_crashPath), sub, name)) {
             // 预先打开句柄：VEH 里不能 CreateFile（可能已在 loader lock 或文件系统异常态）。
             //   没打开成功就把路径清空 —— 转储会静默变成「什么都不写」，

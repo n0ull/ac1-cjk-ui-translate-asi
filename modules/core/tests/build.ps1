@@ -6,18 +6,14 @@
 param([string[]]$Defines = @())
 
 $ErrorActionPreference = 'Stop'
-$VC  = 'C:\Program Files (x86)\Microsoft Visual Studio\2022\BuildTools\VC\Tools\MSVC\14.44.35207'
-$SDK = 'C:\Program Files (x86)\Windows Kits\10'
-$V   = '10.0.26100.0'
 
 $here  = Split-Path -Parent $MyInvocation.MyCommand.Path
 $mod   = Split-Path -Parent $here                 # modules\core
 $out   = Join-Path $here 'out'
 if (-not (Test-Path $out)) { New-Item -ItemType Directory $out | Out-Null }
 
-$env:PATH    = "$VC\bin\Hostx64\x86;$env:PATH"
-$env:INCLUDE = "$VC\include;$SDK\Include\$V\ucrt;$SDK\Include\$V\shared;$SDK\Include\$V\um;$SDK\Include\$V\winrt"
-$env:LIB     = "$VC\lib\x86;$SDK\Lib\$V\ucrt\x86;$SDK\Lib\$V\um\x86"
+$root = Split-Path -Parent (Split-Path -Parent $mod)
+. "$root/tools/modules/native-toolchain.ps1"
 
 $flags = @('/nologo','/O2','/MT','/EHsc','/W3','/utf-8','/D_CRT_SECURE_NO_WARNINGS')
 

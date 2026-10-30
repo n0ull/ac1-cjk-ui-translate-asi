@@ -41,7 +41,7 @@ struct InvEntry {
 InvEntry g_inv[INV_MAX];
 // 只有 g_invDrop 是真正的计数 ⇒ 进 core::Counters。g_invN / g_invDone 故意留在外面：
 //   · g_invN 是「已发布条目数」游标，必须在条目写完之后才自增 —— 读侧全靠这条
-//     不变量（tick 与去重扫描都只碰下标 < g_invN 的格）。而 ctr_claim 的语义恰恰
+//     不变量（tick 与去重扫描都只碰下标 < g_invN 的格）。而 ctr_claim_n 的语义恰恰
 //     相反（自增在前、序号即下标）：拿它当槽位来源，读侧就必须容忍「已认领但还没
 //     写完」的格子，而它又给不出「自增在最后」。两个要求互斥 ⇒ 新增路径改用
 //     g_invLock 把「占槽 + 写 + 发布」三者串起来，游标语义保持不变。
@@ -59,6 +59,15 @@ volatile LONG g_invDone = 0; // 已经写进文件的条数
 char          g_dir[MAX_PATH] = "";
 int           g_hdrDone = 0;
 
+// 仅监控线程访问。跨 tick 保留未写完的字节和同一个文件句柄，
+// 防止重试重发半行前缀，或把余下字节接到被替换的文件上。
+struct PendingLine {
+    HANDLE file;
+    char   bytes[320];
+    DWORD  size;
+    DWORD  sent;
+} g_output = { INVALID_HANDLE_VALUE, {}, 0, 0 };
+
 static int inv_drop() { return (int)core::ctr_get(&g_c, C_DROP); }
 
 void to_utf8(char* out, size_t cap, const wchar_t* s, int n)
@@ -72,21 +81,34 @@ void to_utf8(char* out, size_t cap, const wchar_t* s, int n)
 const char* flag_tag(unsigned char f)
 {
     if (f & INV_F_REPLACED) return "替换   ";
+    if (f & INV_F_UNCHANGED) return "同值 ";
     if (f & INV_F_HIT) return "命中   ";
-    if (f & INV_F_MISS) return ((f & INV_F_NONASCII) ? "未命中·图标" : "未命中 ");
+    if (f & INV_F_MISS) return ((f & INV_F_NONASCII) ? "未命中·非ASCII" : "未命中 ");
     return "未知   ";
 }
 
-void write_entry(HANDLE h, const InvEntry* e)
+int format_entry(char* line, size_t cap, const InvEntry* e)
 {
     char u8[INV_LEN * 4 + 8];
     to_utf8(u8, sizeof(u8), e->t, (int)e->n);
-    char line[INV_LEN * 4 + 96];
-    int n = _snprintf(line, sizeof(line), "[×%u] %s caller=%08X %s\r\n", (unsigned)e->cnt, flag_tag(e->flags),
-                      e->caller, u8);
-    if (n <= 0) return;
-    DWORD wrote = 0;
-    WriteFile(h, line, (DWORD)n, &wrote, NULL);
+    return _snprintf(line, cap, "[×%u] %s caller=%08X %s\r\n", (unsigned)e->cnt, flag_tag(e->flags),
+                     e->caller, u8);
+}
+
+DWORD write_pending()
+{
+    while (g_output.sent < g_output.size) {
+        DWORD remaining = g_output.size - g_output.sent;
+        DWORD wrote = 0;
+        BOOL  ok = WriteFile(g_output.file, g_output.bytes + g_output.sent, remaining, &wrote, NULL);
+        DWORD error = ok ? ERROR_SUCCESS : GetLastError();
+        if (wrote > remaining) return ERROR_INVALID_DATA;
+        g_output.sent += wrote;
+        if (!ok) return error ? error : ERROR_WRITE_FAULT;
+        if (!wrote) return ERROR_WRITE_FAULT; // 不在零进展的写入上忙等
+    }
+    g_output.size = g_output.sent = 0;
+    return ERROR_SUCCESS;
 }
 
 // ---- 新增槽的写锁 ----
@@ -172,12 +194,12 @@ void inventory_tick(const char* asi_dir)
     if (done >= n && g_hdrDone) return; // 没有新条目
 
     char path[MAX_PATH + 48];
-    // 产出统一进 AC1_CJK\，文件名带 run stamp，与 run_<stamp>.log 连成同一轮；
+    // 产出统一进 AC1_Runtime\，文件名带 run stamp，与 run_<stamp>.log 连成同一轮；
     //   每 run 一个干净的全记录。路径拼接走 core::path_join（两步、带容量自检，
     //   与 log.cpp / trace.cpp 的写法一致）。
     char sub[MAX_PATH + 16];
-    if (!core::path_join(sub, (int)sizeof(sub), g_dir, "AC1_CJK")) {
-        core::log_line("!! [INV] 目录过长，拼不出 AC1_CJK\\ 子目录 ⇒ 本轮不落盘");
+    if (!core::path_join(sub, (int)sizeof(sub), g_dir, "AC1_Runtime")) {
+        core::log_error("!! [INV] 目录过长，拼不出 AC1_Runtime\\ 子目录 ⇒ 本轮不落盘");
         return;
     }
     CreateDirectoryA(sub, NULL);
@@ -185,41 +207,60 @@ void inventory_tick(const char* asi_dir)
     _snprintf(name, sizeof(name) - 1, "strings_%s.txt", core::log_run_stamp());
     name[sizeof(name) - 1] = 0;
     if (!core::path_join(path, (int)sizeof(path), sub, name)) {
-        core::log_line("!! [INV] 目录过长，拼不出 %s（>%d 字节）⇒ 本轮不落盘", name, (int)sizeof(path));
+        core::log_error("!! [INV] 目录过长，拼不出 %s（>%d 字节）⇒ 本轮不落盘", name, (int)sizeof(path));
         return;
     }
 
-    HANDLE h =
-        CreateFileA(path, FILE_APPEND_DATA, FILE_SHARE_READ, NULL, OPEN_ALWAYS, FILE_ATTRIBUTE_NORMAL, NULL);
-    if (h == INVALID_HANDLE_VALUE) {
-        core::log_line("!! [INV] 打不开 %s（err=%lu）⇒ 本轮不落盘", path, GetLastError());
-        return;
-    }
-
-    if (!g_hdrDone) {
-        SYSTEMTIME st;
-        GetLocalTime(&st);
-        const char* ds = dict::ready() ? dict::status() : "未就绪";
-        if (!ds || !ds[0]) ds = "-";
-        char hdr[320];
-        int k = _snprintf(hdr, sizeof(hdr), "# === run %04d-%02d-%02d %02d:%02d:%02d pid=%lu 词典=%s ===\r\n",
-                          st.wYear, st.wMonth, st.wDay, st.wHour, st.wMinute, st.wSecond,
-                          (unsigned long)GetCurrentProcessId(), ds);
-        if (k > 0) {
-            DWORD w = 0;
-            WriteFile(h, hdr, (DWORD)k, &w, NULL);
+    if (g_output.file == INVALID_HANDLE_VALUE) {
+        g_output.file = CreateFileA(path, FILE_APPEND_DATA, FILE_SHARE_READ, NULL, OPEN_ALWAYS,
+                                    FILE_ATTRIBUTE_NORMAL, NULL);
+        if (g_output.file == INVALID_HANDLE_VALUE) {
+            core::log_error("!! [INV] 打不开 %s（err=%lu）⇒ 本轮不落盘", path, GetLastError());
+            return;
         }
-        g_hdrDone = 1;
     }
 
-    // 全部写出：新增路径在 g_invLock 里「先写条目、最后才自增 g_invN」（InterlockedIncrement
-    //   是全屏障），所以任何下标 < n 的条目都已初始化完整 —— 既不会读到半条，也不会有
-    //   两线程写同一格留下的空洞条目，无需跳过最新一条。
-    for (int i = done; i < n; i++) write_entry(h, &g_inv[i]);
-    CloseHandle(h);
+    // n 是本次快照；I/O 期间新发布的条目留到下次。游标只越过完整行。
+    while (!g_hdrDone || g_invDone < n) {
+        if (!g_output.size) {
+            int length;
+            if (!g_hdrDone) {
+                SYSTEMTIME st;
+                GetLocalTime(&st);
+                const char* ds = dict::ready() ? dict::status() : "未就绪";
+                if (!ds || !ds[0]) ds = "-";
+                length = _snprintf(g_output.bytes, sizeof(g_output.bytes),
+                                   "# === run %04d-%02d-%02d %02d:%02d:%02d pid=%lu 词典=%s ===\r\n",
+                                   st.wYear, st.wMonth, st.wDay, st.wHour, st.wMinute, st.wSecond,
+                                   (unsigned long)GetCurrentProcessId(), ds);
+            }
+            else {
+                length = format_entry(g_output.bytes, sizeof(g_output.bytes), &g_inv[g_invDone]);
+            }
+            if (length <= 0 || length >= (int)sizeof(g_output.bytes)) {
+                CloseHandle(g_output.file);
+                g_output.file = INVALID_HANDLE_VALUE;
+                core::log_error("!! [INV] 行格式化失败（entry=%ld）⇒ 保留游标", g_invDone);
+                return;
+            }
+            g_output.size = (DWORD)length;
+        }
+        DWORD error = write_pending();
+        if (error != ERROR_SUCCESS) {
+            core::log_error("!! [INV] 写入失败（err=%lu header=%d entry=%ld bytes=%lu/%lu）⇒ 下次续写 %s",
+                            error, !g_hdrDone, g_invDone, g_output.sent, g_output.size, path);
+            return;
+        }
+        if (!g_hdrDone)
+            g_hdrDone = 1;
+        else
+            ++g_invDone;
+    }
+    CloseHandle(g_output.file);
+    g_output.file = INVALID_HANDLE_VALUE;
 
-    g_invDone = n;
-    core::log_line("[INV] 字符串全记录：唯一 %d（丢弃 %d）｜ 已写出 %d 条 → %s", n, inv_drop(), n, path);
+    core::log_line("[INV] 字符串全记录：唯一 %d（丢弃 %d）｜ 已写出 %ld 条 → %s", n, inv_drop(), g_invDone,
+                   path);
 }
 
 } // namespace text

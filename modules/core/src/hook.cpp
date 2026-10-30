@@ -41,7 +41,7 @@ int ensure_minhook(const char* who)
     if (g_mhReady) return 1;
     const MH_STATUS st = MH_Initialize();
     if (st != MH_OK && st != MH_ERROR_ALREADY_INITIALIZED) {
-        log_line("[钩] !! MH_Initialize 失败（%s）⇒ %s 跳过", who, MH_StatusToString(st));
+        log_error("[钩] !! MH_Initialize 失败（%s）⇒ %s 跳过", who, MH_StatusToString(st));
         return 0;
     }
     g_mhReady = true;
@@ -153,7 +153,7 @@ int hook_install_one(HookSpec& spec, unsigned base)
         char want[64], got[64];
         hook_hexdump(want, (int)sizeof(want), exp, explen);
         hook_hexdump(got, (int)sizeof(got), target, explen);
-        log_line("[钩] !! %-14s 签名不符（不硬装）：RVA %08X / VA %08X，第 %d 字节起不符 期望[%s] 实际[%s]",
+        log_error("[钩] !! %-14s 签名不符（不硬装）：RVA %08X / VA %08X，第 %d 字节起不符 期望[%s] 实际[%s]",
                  spec.name, rva, base + rva, firstBad, want, got);
         return 0;
     }
@@ -164,14 +164,14 @@ int hook_install_one(HookSpec& spec, unsigned base)
     // 那是 MinHook 生成的 trampoline，detour 靠它转发原函数。
     const MH_STATUS sc = MH_CreateHook(target, spec.detour, spec.orig);
     if (sc != MH_OK) {
-        log_line("[钩] !! %-14s MH_CreateHook 失败（%s）⇒ 不装", spec.name, MH_StatusToString(sc));
+        log_error("[钩] !! %-14s MH_CreateHook 失败（%s）⇒ 不装", spec.name, MH_StatusToString(sc));
         return 0;
     }
     // Enable 必须查返回值：失败时钩子其实没生效——"报了成功却没生效"比
     //   "明确失败"贵得多。
     const MH_STATUS se = MH_EnableHook(target);
     if (se != MH_OK) {
-        log_line("[钩] !! %-14s MH_EnableHook 失败（%s）⇒ 钩子没生效 ⇒ 撤掉并按未装处理", spec.name,
+        log_error("[钩] !! %-14s MH_EnableHook 失败（%s）⇒ 钩子没生效 ⇒ 撤掉并按未装处理", spec.name,
                  MH_StatusToString(se));
         MH_RemoveHook(target);
         return 0;
@@ -179,7 +179,7 @@ int hook_install_one(HookSpec& spec, unsigned base)
 
     // 落钩成功 ⇒ 登记进钩执行迹，并把槽位回填给调用方。
     //   单点分配：登记用 spec.name 这一个名字，detour 拿回填的槽位去 enter/leave。
-    spec.traceSlot = hooktrace_ensure(spec.name, hooktrace_default_policy());
+    spec.traceSlot = hooktrace_register(spec.name, hooktrace_default_policy());
 
     log_line("[钩] %-14s 已装 ✓ RVA %08X / VA %08X 签名[%d 字节逐字节符合] trampoline %p", spec.name, rva,
              base + rva, explen, *spec.orig);

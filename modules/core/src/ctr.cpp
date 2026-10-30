@@ -29,12 +29,6 @@ void ctr_inc(Counters* c, int slot)
     InterlockedIncrement(&c->v[slot]);
 }
 
-void ctr_add(Counters* c, int slot, long delta)
-{
-    if (!c || slot < 0 || slot >= ctr_slots(c) || delta == 0) return;
-    InterlockedExchangeAdd(&c->v[slot], (LONG)delta);
-}
-
 long ctr_get(const Counters* c, int slot)
 {
     if (!c || slot < 0 || slot >= ctr_slots(c)) return 0;
@@ -57,19 +51,6 @@ int ctr_claim_n(Counters* c, int cap)
     if (s >= bound) return -1;
     return (int)s;
 }
-
-int ctr_claim(Counters* c) { return ctr_claim_n(c, 0); }
-
-void ctr_snapshot(const Counters* c, long* out, int outMax)
-{
-    if (!out || outMax <= 0) return;
-    const int slots = ctr_slots(c);
-    const int n = (slots < outMax) ? slots : outMax;
-    for (int i = 0; i < n; i++) out[i] = ctr_get(c, i);
-    for (int i = n; i < outMax; i++) out[i] = 0;
-}
-
-int ctr_count(const Counters* c) { return ctr_slots(c); }
 
 } // namespace core
 } // namespace ac1

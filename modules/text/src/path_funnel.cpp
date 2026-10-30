@@ -12,7 +12,8 @@
 //     4 个 LoadVisitor 槽（0x8C3F90 / 0x8C8850 / 0x8C43A0 / 0x8C5690）、
 //     流式填充 0x892E40、两个 widget setter（0x892C10→widget+0x14、0x895370→widget+0x10）。
 //     Dx10 侧同样 24 个调用点，visitor 与流式填充共用。
-//   · 所有调用者随后都会 assign(最终目标, dst, 0, -1)（Dx9: 0x8759B0 / Dx10: 0xB94A70），
+//   · 随后经原生wstring assign（Dx9 VA 0x8759B0 / Dx10 VA 0x43DF90），
+//     其中Dx9返回RVA 4C5B7C / Dx10返回RVA 81942C先经setter再复制。
 //     而 assign 按真实长度搬运 ⇒ 我们在 post 阶段换掉 dst 的内容就等于换了最终文本 ⇒ 零填充。
 //   · Dx9 侧唯一非 UI 调用者：sub_F8A0E0（诊断消息格式化，8 处）—— 词典不命中即无副作用。
 //
@@ -60,7 +61,7 @@ FunnelFn g_origFunnel = NULL;
 // 计数快照。多个线程会同时改，所以各字段都是 volatile LONG；用 core::Counters
 // （ctr_inc / ctr_get），与 glyph 共用同一份实现。读侧只求"趋势"，不做一致性快照。
 // 槽位顺序不许动 —— TextCounters 字段、状态行、以及单测的 topCount 都依赖它。
-// g_c.next 不占 v[] 的任何一格；本模块拿它当「未命中 ASCII Top」的占槽游标（见 top_remember）。
+// g_c.next 不占 v[] 的任何一格；本模块拿它当「未命中 Top」的占槽游标（见 top_remember）。
 enum {
     C_HITS = 0,
     C_REPLACED,
@@ -70,7 +71,7 @@ enum {
     C_SKIPPED_GROW,
     C_FAULT,
     C_SKIP_EMPTY,
-    C_SKIP_CJK,
+    C_SKIP_UNCHANGED,
     C_SKIP_DICT,
     C_SKIP_BADVIEW,
     C_SKIP_OTHER,
@@ -113,7 +114,7 @@ const int      TOP_LEN = 24; // 每条最多留多少码元
 static wchar_t g_top[TOP_N][TOP_LEN];
 static int     g_topLen[TOP_N];
 
-// 竞争纪律：先占槽再写（ctr_claim）——「读计数 → 判边界 → 写 → 最后自增」会让两个
+// 竞争纪律：先占槽再写（ctr_claim_n）——「读计数 → 判边界 → 写 → 最后自增」会让两个
 //   线程抢到同一格并把计数顶过上界。inventory 的 inv_remember 要的是相反的顺序
 //   （写条目在前、发布游标在最后，读侧才不会看到半条）⇒ 它用一把只护「新增」的
 //   小锁把占槽与发布串起来，两条路径的形状不同、理由都在各自的文件里。
@@ -129,7 +130,7 @@ void top_remember(const wchar_t* key, int n)
         if (memcmp(g_top[i], key, (size_t)n * sizeof(wchar_t)) == 0) return;
     }
     // 占槽：自增提到最前面 ⇒ 序号全局唯一，两个线程不会写同一格；满了返回 -1。
-    // 用 core 的显式上界版本：默认的 ctr_claim 按计数槽数封顶（≤32），
+    // 用 core 的显式上界：cap<=0 会按计数槽数封顶（≤32），
     // 而本表有 TOP_N = 128 格 —— 用默认版会把 Top 上限悄悄砍成 32 条。
     const int s = core::ctr_claim_n(&g_c, TOP_N);
     if (s < 0) return;
@@ -178,18 +179,61 @@ void dump_wstr(char* out, size_t cap, const wchar_t* s, int n)
 //   dst 是引擎的临时 wstring，随时可能被别的线程改动 ⇒ 读它必须 __try 兜底。
 // 详见 src\path_internal.h。
 //
-// ---- forge 闸门 ----
-//   装配层在启动时把 forge 核验结果经 set_forge_patch 注入（见 glyph/forgecheck.cpp）。
-//   图集不在 ⇒ 本层只观测不替换（命中/未命中/样本/全记录照记，一个字节不写），
-//   与 TEXT_REPLACE=0 同形 ⇒ 闸门关 = 纯原版界面。
-static int g_forgePatch = 1; // 单测默认开；装配层每轮启动显式 set_forge_patch
-void       set_forge_patch(int present) { g_forgePatch = present ? 1 : 0; }
+// The resource owner must publish readiness before text can be written.
+static RuntimeResourcesReady g_runtimeResources = NULL;
+void set_runtime_resources(RuntimeResourcesReady ready) { g_runtimeResources = ready; }
+
+static bool runtime_ui_caller(void* return_address)
+{
+    // Both columns return from the funnel before Mysize-based assignment and
+    // layout; docs/DX10_RUNTIME.md records the seven independent callsites.
+    const unsigned callers9[] = {0x492C8B, 0x492EC7, 0x4953EC, 0x4C400E, 0x4C4461, 0x4C5B7C, 0x4C88E3};
+    const unsigned callers10[] = {0x7F4EFB, 0x7F5137, 0x7F75DC, 0x8178BE, 0x817D11, 0x81942C, 0x81C193};
+    const unsigned* callers = NULL;
+    switch (core::host_flavor()) {
+    case core::HOST_FLAVOR_DX9: callers = callers9; break;
+    case core::HOST_FLAVOR_DX10: callers = callers10; break;
+    default: return false;
+    }
+    unsigned base = core::hook_base();
+    for (unsigned i = 0; i < sizeof(callers9)/sizeof(callers9[0]); ++i)
+        if ((unsigned)(uintptr_t)return_address == base + callers[i]) return true;
+    return false;
+}
+
+#if TEXT_REPLACE
+static bool runtime_commit(void* dst, const core::WStrView& view, const wchar_t* value, int length)
+{
+    unsigned* size = (unsigned*)((unsigned char*)dst + AC1_WSTR_OFF_SIZE);
+    if (view.len > DICT_KEY_MAX || !core::mem_writable(size, sizeof(*size))) return false;
+    wchar_t previous[DICT_KEY_MAX + 1];
+    bool captured = false;
+    __try {
+        memcpy(previous, view.buf, (view.len + 1) * 2);
+        captured = true;
+        wchar_t* buffer = (wchar_t*)view.buf;
+        memcpy(buffer, value, (size_t)length * 2);
+        buffer[length] = 0;
+        *size = (unsigned)length;
+        if (*size == (unsigned)length && memcmp(buffer, value, (size_t)length * 2) == 0) return true;
+    } __except (EXCEPTION_EXECUTE_HANDLER) { }
+    if (captured) {
+        __try { memcpy((void*)view.buf, previous, (view.len + 1) * 2); *size = view.len; }
+        __except (EXCEPTION_EXECUTE_HANDLER) { }
+    }
+    return false;
+}
+#endif
 // 「替换生效」的唯一判定口：编译开关与运行期闸门与关系，样本/清单/写入共用。
-static int replace_effective() { return TEXT_REPLACE && g_forgePatch; }
+static int replace_effective() { return TEXT_REPLACE && g_runtimeResources && g_runtimeResources(); }
 void       run_post_counted(void* dst, void* ra)
 {
     __try {
         core::ctr_inc(&g_c, C_HITS);
+        if (!runtime_ui_caller(ra)) {
+            core::ctr_inc(&g_c, C_SKIP_OTHER);
+            return;
+        }
 
         core::WStrView v = core::wstr_view(dst); // 自带读门 + __try
         if (!v.ok) {
@@ -203,19 +247,11 @@ void       run_post_counted(void* dst, void* ra)
             return;
         }
 
-        // 闸门①：串里已经有 CJK（任一码元 ≥ 0x3000）⇒ 说明是上一轮留下的译文，幂等跳过。
-        // 顺带在这同一趟里标出"含 ≥0x80 码位"（图标转义类）—— 后面的未命中分类要用。
         bool nonAscii = false;
         for (unsigned i = 0; i < v.len; i++) {
             unsigned short c = (unsigned short)v.buf[i];
-            if (c >= 0x3000) {
-                core::ctr_inc(&g_c, C_SKIP_CJK);
-                funnel_gate_log("已含CJK", ra, (int)v.len);
-                return;
-            }
             if (c >= 0x80) nonAscii = true;
         }
-        // 闸门②：词典没就绪 ⇒ 只观测
         if (!dict::ready()) {
             core::ctr_inc(&g_c, C_SKIP_DICT);
             funnel_gate_log("词典未就绪", ra, (int)v.len);
@@ -232,14 +268,11 @@ void       run_post_counted(void* dst, void* ra)
         const dict::DictVal hit = dict::lookup(key, kn);
         if (!hit.p) {
             core::ctr_inc(&g_c, C_MISS);
-            // 分类：纯 ASCII 的未命中 = 词典缺条目（可行动）；含 ≥0x80 的是图标转义类，本就不该翻。
-            // 只有 ASCII 的才进 Top 列表 —— 那才是"该补哪条词典"的可行动信号。
             if (nonAscii)
                 core::ctr_inc(&g_c, C_MISS_NONASCII);
-            else {
+            else
                 core::ctr_inc(&g_c, C_MISS_ASCII);
-                top_remember(key, kn);
-            }
+            top_remember(key, kn);
             inv_remember(key, kn, INV_F_MISS | (nonAscii ? INV_F_NONASCII : 0), ra);
             if (core::ctr_get(&g_c, C_SAMPLE_MISS) < SAMPLE_N) {
                 char txt[512];
@@ -256,13 +289,20 @@ void       run_post_counted(void* dst, void* ra)
         //   故 hit.p 非空时 len 恒 ≥ 1。
         const wchar_t* val = hit.p;
         const int      vlen = hit.len;
+        const bool unchanged = v.len == (unsigned)vlen &&
+            memcmp(v.buf, val, (size_t)vlen * sizeof(wchar_t)) == 0;
+        if (unchanged) {
+            inv_remember(key, kn, INV_F_HIT | INV_F_UNCHANGED, ra);
+            core::ctr_inc(&g_c, C_SKIP_UNCHANGED);
+            return;
+        }
 
         if (core::ctr_get(&g_c, C_SAMPLE_HIT) < SAMPLE_N) {
             char txt[512];
             int  newLen = (int)v.len;
 #if TEXT_REPLACE
             if (!replace_effective())
-                newLen = (int)v.len; // forge 闸门关：与 TR0 同形（不替换）
+                newLen = (int)v.len; // 资源未就绪，保留原文。
             else if (v.res >= (unsigned)vlen)
                 newLen = vlen;
             else
@@ -275,27 +315,30 @@ void       run_post_counted(void* dst, void* ra)
                            newLen, txt);
         }
 
-        // 字符串全记录：命中的串也登记；"替换"标签与下面 #if 块同口径（能装下才算替换）
-        inv_remember(key, kn,
-                     INV_F_HIT | ((replace_effective() && v.res >= (unsigned)vlen) ? INV_F_REPLACED : 0), ra);
+        // Only a completed write may publish INV_F_REPLACED.
+#if !TEXT_REPLACE
+        inv_remember(key, kn, INV_F_HIT, ra);
+#endif
 
 #if TEXT_REPLACE
-        if (!replace_effective()) return; // forge 闸门关 ⇒ 只观测不替换（真·纯原版）
+        if (!replace_effective()) {
+            inv_remember(key, kn, INV_F_HIT, ra);
+            return;
+        }
         if (v.res < (unsigned)vlen) {
+            inv_remember(key, kn, INV_F_HIT, ra);
             core::ctr_inc(&g_c, C_SKIPPED_GROW);
             return;
         } // 装不下：不动任何字节
         if (!core::mem_writable(v.buf, ((size_t)vlen + 1) * sizeof(wchar_t))) {
+            inv_remember(key, kn, INV_F_HIT, ra);
             core::ctr_inc(&g_c, C_SKIP_OTHER);
             return;
         }
-        // 视图里的 buf 是 const（读语义）；上面 mem_writable 已确认这段可写，这里才去掉 const
-        wchar_t* wbuf = (wchar_t*)v.buf;
-        memcpy(wbuf, val, (size_t)vlen * sizeof(wchar_t));
-        wbuf[vlen] = 0; // 尾 NUL（buf[_Myres] 本身是合法的）
-        *(volatile unsigned*)((unsigned char*)dst + AC1_WSTR_OFF_SIZE) = (unsigned)vlen; // _Mysize
-        // _Myres 一个字节都不动、不做等长填充：下游 assign 按 _Mysize 搬运 ⇒ 零填充
-        core::ctr_inc(&g_c, C_REPLACED);
+        const bool committed = runtime_commit(dst, v, val, vlen);
+        inv_remember(key, kn, INV_F_HIT | (committed ? INV_F_REPLACED : 0), ra);
+        if (committed) core::ctr_inc(&g_c, C_REPLACED);
+        else core::ctr_inc(&g_c, C_FAULT);
 #endif
     }
     __except (EXCEPTION_EXECUTE_HANDLER) {
@@ -347,9 +390,8 @@ static bool funnel_install()
         g_traceSlot = spec.traceSlot;
         core::hooktrace_set_policy(g_traceSlot, 2000, 200);
     }
-    core::log_line("[FUNNEL] 配置：TEXT_REPLACE=%d（%s） forge 闸门=%s 词典匹配=%s 样本上限=%d", TEXT_REPLACE,
-                   TEXT_REPLACE ? "**真替换**" : "只观测、不写任何字节",
-                   g_forgePatch ? "开" : "**关（只观测不替换）**", "canon+精确相等", SAMPLE_N);
+    core::log_line("[FUNNEL] mode=runtime-package TEXT_REPLACE=%d ready=%d matching=canon+exact ui_callers=7",
+                   TEXT_REPLACE, replace_effective());
     return r != 0;
 }
 
@@ -365,7 +407,7 @@ static TextCounters snapshot()
     s.skippedGrow = (int)core::ctr_get(&g_c, C_SKIPPED_GROW);
     s.fault = (int)core::ctr_get(&g_c, C_FAULT);
     s.skipEmpty = (int)core::ctr_get(&g_c, C_SKIP_EMPTY);
-    s.skipCjk = (int)core::ctr_get(&g_c, C_SKIP_CJK);
+    s.skipUnchanged = (int)core::ctr_get(&g_c, C_SKIP_UNCHANGED);
     s.skipDictNotReady = (int)core::ctr_get(&g_c, C_SKIP_DICT);
     s.skipBadView = (int)core::ctr_get(&g_c, C_SKIP_BADVIEW);
     s.skipOther = (int)core::ctr_get(&g_c, C_SKIP_OTHER);
@@ -382,14 +424,14 @@ static void funnel_status(char* out, int cap)
     core::str_init(&s, out, cap);
     core::str_addf(&s,
                    "FUNNEL 触发=%d 替换=%d 未命中=%d(ASCII %d/非ASCII %d) "
-                   "跳过=空串 %d/含CJK %d/词典未就绪 %d/结构不可信 %d/其它 %d "
+                   "跳过=空串 %d/同值 %d/词典未就绪 %d/结构不可信 %d/其它 %d "
                    "容量不足=%d 异常=%d 样本=%d+%d/%d",
-                   k.hits, k.replaced, k.miss, k.missAscii, k.missNonAscii, k.skipEmpty, k.skipCjk,
+                   k.hits, k.replaced, k.miss, k.missAscii, k.missNonAscii, k.skipEmpty, k.skipUnchanged,
                    k.skipDictNotReady, k.skipBadView, k.skipOther, k.skippedGrow, k.fault, k.sampleHit,
                    k.sampleMiss, SAMPLE_N);
 }
 
-// 追加在主行后面那条：「未命中 ASCII Top」
+// 追加在主行后面那条：「未命中 Top」
 // 每条都是 canon 之后的键（真正拿去查表的形态），\uXXXX 转义，≤TOP_LEN 码元。
 static void funnel_detail(char* out, int cap)
 {
@@ -400,7 +442,7 @@ static void funnel_detail(char* out, int cap)
     //   「拿 _snprintf 返回值当写偏移」的写法是越界来源，见 core/str.h。
     core::Str s;
     core::str_init(&s, out, cap);
-    core::str_addf(&s, "未命中 ASCII Top（去重，≤%d 条 / 每条 ≤%d 码元）：", TOP_N, TOP_LEN);
+    core::str_addf(&s, "未命中 Top（去重，≤%d 条 / 每条 ≤%d 码元）：", TOP_N, TOP_LEN);
     if (n == 0) {
         core::str_addf(&s, "（空）");
         return;

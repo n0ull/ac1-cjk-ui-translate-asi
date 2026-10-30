@@ -12,6 +12,7 @@
 #include "ac1/core/trace.h"
 #include "ac1/core/file.h"
 #include "ac1/core/str.h"
+#include "ac1/core/runtime_package.h"
 
 #include "ac1/core/host.h"
 #include "ac1/core/log.h"
@@ -20,6 +21,7 @@
 #include <windows.h>
 #include <stdio.h>
 #include <string.h>
+#include <vector>
 
 using namespace ac1::core;
 
@@ -351,18 +353,19 @@ static void test_log()
     unsigned long d0 = log_dropped();
     init_log(g_dir);
     check(log_path()[0] != 0, "init_log 后有路径");
-    check(strstr(log_path(), "AC1_CJK\\run_") != NULL, "路径 = AC1_CJK\\run_<stamp>.log", log_path());
+    check(strstr(log_path(), "AC1_Runtime\\run_") != NULL, "路径 = AC1_Runtime\\run_<stamp>.log", log_path());
     check(strstr(log_path(), ".log") != NULL, "路径以 .log 结尾");
     check(lstrlenA(log_run_stamp()) == 15, "run stamp 是 YYYYMMDD_HHMMSS（15 字符）", log_run_stamp());
     check(log_run_stamp()[8] == '_', "run stamp 第 9 位是下划线");
     check(GetFileAttributesA(log_path()) != INVALID_FILE_ATTRIBUTES, "run 日志文件已落盘");
 
-    // 三个等级各写一行 + "!!" 标记的两处形态，然后回读全文断言行格式
     log_line("[单测] core 日志通路自检 pid=%lu", (unsigned long)GetCurrentProcessId());
-    log_line("!! 单测错误样例");
-    log_line("[单测] !! 类别前缀之后的标记");
-    log_line("%s", "[词典] !! 经注入出口的预格式化消息体");
+    log_error("[单测] 无标记错误样例");
+    log_error("%s", "[词典] 预格式化错误消息体");
+    log_line("!! [单测] 普通正文标点");
+    log_line("%s", "[单测] !! 预格式化普通正文");
     log_warn("[单测] 降级样例");
+    log_warn("[单测] !! 带标点的降级样例");
     check(log_dropped() == d0, "写日志没有丢行");
     close_log();
     {
@@ -377,14 +380,12 @@ static void test_log()
         }
         buf[got] = 0;
         check(strstr(buf, "][INFO] [单测] core 日志通路自检") != NULL, "INFO 行带等级列", buf);
-        check(strstr(buf, "][ERR] !! 单测错误样例") != NULL, "★ 兼容壳：!! 开头自动归 ERR");
-        // 回归：判据曾经只看格式串的 fmt[0..1]。类别前缀之后写标记的真实形态
-        //   （[词典] !! / [字形] !! …）与经 set_log 注入的 "%s" 形态都会停在 INFO
-        //   ⇒ 全树 23 处「要行动的事故」里只有 4 处真能打 ERR（实机 267 行全 INFO）。
-        check(strstr(buf, "][ERR] [单测] !! 类别前缀之后的标记") != NULL, "★ 标记在类别前缀之后也归 ERR");
-        check(strstr(buf, "][ERR] [词典] !! 经注入出口的预格式化消息体") != NULL,
-              "★ 经注入出口（fmt=\"%s\"）的消息体带标记同样归 ERR");
+        check(strstr(buf, "][ERR] [单测] 无标记错误样例") != NULL, "显式 ERR 不依赖正文标点");
+        check(strstr(buf, "][ERR] [词典] 预格式化错误消息体") != NULL, "预格式化消息保持显式 ERR");
+        check(strstr(buf, "][INFO] !! [单测] 普通正文标点") != NULL, "INFO 不按正文猜等级");
+        check(strstr(buf, "][INFO] [单测] !! 预格式化普通正文") != NULL, "预格式化正文不改变 INFO");
         check(strstr(buf, "][WARN] [单测] 降级样例") != NULL, "log_warn 写出 WARN 级");
+        check(strstr(buf, "][WARN] [单测] !! 带标点的降级样例") != NULL, "正文不改变 WARN");
         check(buf[0] == '[' && buf[5] == '-' && buf[8] == '-' && buf[11] == ' ',
               "行首是 [YYYY-MM-DD HH:MM:SS] 日期时间", buf);
     }
@@ -519,57 +520,44 @@ static void test_ctr()
     printf("\n[7] Counters 原子计数组与占槽\n");
     Counters c;
     ctr_reset(&c, 4);
-    check(ctr_count(&c) == 4, "槽数按参数归一");
 
     ctr_inc(&c, 0);
     ctr_inc(&c, 0);
-    ctr_add(&c, 1, 5);
-    ctr_add(&c, 1, -2);
     check(ctr_get(&c, 0) == 2, "槽 0 自增两次 = 2");
-    check(ctr_get(&c, 1) == 3, "槽 1 加 5 减 2 = 3");
 
     // 越界：静默丢弃，绝不越界写
     ctr_inc(&c, -1);
     ctr_inc(&c, 4);
     ctr_inc(&c, 9999);
-    check(ctr_get(&c, 0) == 2 && ctr_get(&c, 1) == 3, "越界自增被丢弃，不污染合法槽");
+    check(ctr_get(&c, 0) == 2, "越界自增被丢弃，不污染合法槽");
     ctr_inc(NULL, 0); // 不崩
     check(ctr_get(NULL, 0) == 0, "NULL 实例读出 0");
 
     // 上限保护：n 超界按 COUNTER_SLOTS_MAX 处理
     Counters big;
     ctr_reset(&big, COUNTER_SLOTS_MAX + 10);
-    check(ctr_count(&big) == COUNTER_SLOTS_MAX, "n 超上限被夹到 COUNTER_SLOTS_MAX");
     ctr_inc(&big, COUNTER_SLOTS_MAX - 1);
     check(ctr_get(&big, COUNTER_SLOTS_MAX - 1) == 1, "上限槽可用");
 
     // 占槽：每次拿到唯一序号，满了返回 -1（「读计数→判边界→写→最后自增」没有这个保证）
     Counters t;
     ctr_reset(&t, 3);
-    int s0 = ctr_claim(&t);
-    int s1 = ctr_claim(&t);
-    int s2 = ctr_claim(&t);
-    int s3 = ctr_claim(&t);
+    int s0 = ctr_claim_n(&t, 0);
+    int s1 = ctr_claim_n(&t, 0);
+    int s2 = ctr_claim_n(&t, 0);
+    int s3 = ctr_claim_n(&t, 0);
     check(s0 == 0 && s1 == 1 && s2 == 2, "占槽依次拿到 0/1/2");
     check(s3 == -1, "占满后返回 -1");
 
     // reset 之后游标归零（否则复用同一个实例会永远占不到槽）
     ctr_reset(&t, 3);
-    check(ctr_claim(&t) == 0, "ctr_reset 后占槽游标归零");
-
-    // 快照
-    Counters s2c;
-    ctr_reset(&s2c, 4);
-    ctr_add(&s2c, 2, 7);
-    long snap[6];
-    ctr_snapshot(&s2c, snap, 6);
-    check(snap[2] == 7 && snap[3] == 0 && snap[4] == 0 && snap[5] == 0, "快照取到值且超出部分补 0");
+    check(ctr_claim_n(&t, 0) == 0, "ctr_reset 后占槽游标归零");
 }
 
 // ================= 8. 文件读取与路径拼接（file） =================
 static void test_file()
 {
-    printf("\n[8] file_read_all / file_exists / path_join\n");
+    printf("\n[8] file_read_all / path_join\n");
 
     char p[MAX_PATH];
     if (!path_join(p, (int)sizeof(p), g_dir, "_core_file_test.bin")) {
@@ -600,20 +588,16 @@ static void test_file()
           "容量不足时 path_join 返回 0");
     check(tiny[0] == 0, "失败时缓冲被置空而不是留下半截路径");
 
-    check(!file_exists("Z:/nope/definitely-missing.bin"), "不存在的文件判否");
-
     // 写一份已知内容再读回来，逐字节核对
     HANDLE h = CreateFileA(p, GENERIC_WRITE, 0, NULL, CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, NULL);
     if (h == INVALID_HANDLE_VALUE) {
         check(false, "创建测试文件", p);
         return;
     }
-    const char* payload = "AC1_CJK_core_file_probe";
+    const char* payload = "AC1_Runtime_core_file_probe";
     DWORD       wr = 0;
     WriteFile(h, payload, (DWORD)strlen(payload), &wr, NULL);
     CloseHandle(h);
-
-    check(file_exists(p), "刚写的文件存在");
 
     unsigned char* buf = NULL;
     int            n = 0;
@@ -727,9 +711,8 @@ static void test_trace_stack()
     // 显式上界版：表比计数数组大是正常用法（text 的 Top 表 128 格 vs 十几槽）
     Counters w;
     ctr_reset(&w, 4); // 计数器只用 4 格
-    check(ctr_count(&w) == 4, "w 的计数槽数 = 4");
-    check(ctr_claim(&w) == 0, "默认 claim 按计数槽数封顶时拿到 0");
-    check(ctr_claim(&w) == 1, "再拿一个 1");
+    check(ctr_claim_n(&w, 0) == 0, "默认上界按计数槽数封顶时拿到 0");
+    check(ctr_claim_n(&w, 0) == 1, "再拿一个 1");
     // 显式上界 8：与计数槽数无关
     check(ctr_claim_n(&w, 8) == 2, "★ 显式上界版不受计数槽数限制");
     check(ctr_claim_n(&w, 8) == 3, "继续拿到 3");
@@ -859,7 +842,7 @@ static void test_trace_sampling()
 //   （真 AV ⇒ 真 VEH ⇒ 真 WriteFile），不必 fork 子进程去死、也不必解析退出码。
 static bool read_crash_log(char* out, int cap)
 {
-    const char* p = hooktrace_crash_path(); // AC1_CJK\crash_<run stamp>.log（日志体系）
+    const char* p = hooktrace_crash_path(); // AC1_Runtime\crash_<run stamp>.log（日志体系）
     HANDLE      h = CreateFileA(p, GENERIC_READ, FILE_SHARE_READ | FILE_SHARE_WRITE, NULL, OPEN_EXISTING,
                                 FILE_ATTRIBUTE_NORMAL, NULL);
     if (h == INVALID_HANDLE_VALUE) return false;
@@ -909,7 +892,7 @@ static void test_trace_crash_dump()
         static char content[8192];
         const bool  got = read_crash_log(content, (int)sizeof(content));
         check(got, "★ 真 AV 触发了 VEH 并落了盘", g_dir);
-        check(strstr(content, "AC1_CJK") != 0, "转储里有抬头", content);
+        check(strstr(content, "AC1_Runtime") != 0, "转储里有抬头", content);
         check(strstr(content, "C0000005") != 0, "★ 转储里记下了真实的异常码", content);
         check(strstr(content, "SELF_PROBE") != 0,
               "★★ 转储里有崩溃时正在执行的那个钩名 —— 这正是本设施存在的理由", content);
@@ -967,6 +950,98 @@ static void test_trace_crash_dump()
     crash_log_delete();
 }
 
+static void fixture_u32(std::vector<unsigned char>& bytes, unsigned at, unsigned value)
+{
+    memcpy(&bytes[at], &value, 4);
+}
+
+static bool write_package_fixture(const char* path, std::vector<unsigned char>& bytes)
+{
+    memset(&bytes[64], 0, 32);
+    unsigned char digest[32];
+    if (!runtime_sha256(bytes.data(), (unsigned)bytes.size(), digest)) return false;
+    memcpy(&bytes[64], digest, 32);
+    FILE* file = NULL;
+    if (fopen_s(&file, path, "wb") || !file) return false;
+    bool ok = fwrite(bytes.data(), 1, bytes.size(), file) == bytes.size();
+    return fclose(file) == 0 && ok;
+}
+
+static void test_language_package()
+{
+    // Literal offsets follow the published wire contract, not the reader's structs.
+    std::vector<unsigned char> bytes(1104, 0);
+    memcpy(bytes.data(), "AC1LANG\0", 8);
+    fixture_u32(bytes, 8, 2); fixture_u32(bytes, 12, 128); fixture_u32(bytes, 16, 1104);
+    fixture_u32(bytes, 28, 4); fixture_u32(bytes, 32, 1024); fixture_u32(bytes, 40, 4);
+    fixture_u32(bytes, 48, 128); fixture_u32(bytes, 56, 224); fixture_u32(bytes, 60, 2);
+    memcpy(&bytes[96], "ja", 2); memcpy(&bytes[1024], "A\tB\n", 4);
+    const char* names[] = {"bold", "techno", "textpc", "title"};
+    unsigned char empty_digest[32], texture_digest[32];
+    if (!runtime_sha256(&bytes[1040], 0, empty_digest) ||
+        !runtime_sha256(&bytes[1040], 16, texture_digest)) {
+        check(false, "fixture hashes"); return;
+    }
+    for (unsigned i = 0; i < 4; ++i) {
+        const unsigned base = 128 + i * 224;
+        memcpy(&bytes[base], names[i], strlen(names[i]));
+        fixture_u32(bytes, base + 16, i + 1); fixture_u32(bytes, base + 20, 0xA2B7E917);
+        for (unsigned at = 24; at <= 36; at += 4) fixture_u32(bytes, base + at, 4);
+        fixture_u32(bytes, base + 40, 4); fixture_u32(bytes, base + 44, 1);
+        fixture_u32(bytes, base + 48, 1); fixture_u32(bytes, base + 56, 2);
+        fixture_u32(bytes, base + 64, 1040 + i * 16);
+        fixture_u32(bytes, base + 80, 1040 + i * 16); fixture_u32(bytes, base + 88, 16);
+        memcpy(&bytes[base + 96], texture_digest, 32);
+        memcpy(&bytes[base + 160], empty_digest, 32);
+        memcpy(&bytes[base + 192], texture_digest, 32);
+    }
+    char path[MAX_PATH];
+    _snprintf_s(path, sizeof(path), _TRUNCATE, "%slanguage-package-fixture.bin", g_dir);
+    check(write_package_fixture(path, bytes), "write synthetic language package");
+    RuntimePackage published;
+    check(published.open(path) && !strcmp(published.language_id(), "ja"), "v2 opens one target language");
+    check(published.font(0) && !published.font(0)->appended_count && published.font(0)->width == 4,
+          "zero-addition font accepts its original atlas and empty record segment");
+    check(!published.open(path) && !strcmp(published.language_id(), "ja"), "reopening cannot change a published language");
+    const char* invalid[] = {"", "JA", "ja-", "ja--jp", "../ja", "a_b"};
+    for (unsigned i = 0; i < sizeof(invalid) / sizeof(invalid[0]); ++i) {
+        memset(&bytes[96], 0, 32); memcpy(&bytes[96], invalid[i], strlen(invalid[i]));
+        check(write_package_fixture(path, bytes), "write invalid language fixture");
+        RuntimePackage rejected;
+        check(!rejected.open(path) && !rejected.language_id()[0] && !rejected.font(0),
+              "invalid language rejects without partial views");
+    }
+    memset(&bytes[96], 0, 32); memcpy(&bytes[96], "ja", 2); bytes[99] = 1;
+    check(write_package_fixture(path, bytes), "write language padding fixture");
+    RuntimePackage padding;
+    check(!padding.open(path), "nonzero language padding rejects");
+    bytes[99] = 0; memcpy(bytes.data(), "AC1RTPK\0", 8); fixture_u32(bytes, 8, 1);
+    check(write_package_fixture(path, bytes), "write historical package fixture");
+    check(!padding.open(path) && !padding.font(0), "native reader rejects the historical format");
+    memcpy(bytes.data(), "AC1LANG\0", 8); fixture_u32(bytes, 8, 2);
+    check(write_package_fixture(path, bytes) && padding.open(path), "rejected package may retry a valid v2 input");
+    DeleteFileA(path);
+}
+
+static void test_runtime_package()
+{
+    const unsigned char expected[32] = {
+        0xBA, 0x78, 0x16, 0xBF, 0x8F, 0x01, 0xCF, 0xEA,
+        0x41, 0x41, 0x40, 0xDE, 0x5D, 0xAE, 0x22, 0x23,
+        0xB0, 0x03, 0x61, 0xA3, 0x96, 0x17, 0x7A, 0x9C,
+        0xB4, 0x10, 0xFF, 0x61, 0xF2, 0x00, 0x15, 0xAD
+    };
+    unsigned char actual[32] = {};
+    check(ac1::core::runtime_sha256("abc", 3, actual) && memcmp(actual, expected, 32) == 0,
+          "runtime package SHA-256 agrees with the standard abc vector");
+    ac1::core::RuntimePackage package;
+    unsigned bytes = 999;
+    check(!package.open(NULL), "runtime package rejects an unavailable input");
+    check(!package.dictionary(&bytes) && !bytes && !package.font(0),
+          "failed package open exposes no partial views");
+    test_language_package();
+}
+
 int main()
 {
     exe_dir();
@@ -984,6 +1059,7 @@ int main()
     test_str();
     test_ctr();
     test_file();
+    test_runtime_package();
     test_trace_stack();
     test_trace_concurrent_register();
     test_trace_sampling();

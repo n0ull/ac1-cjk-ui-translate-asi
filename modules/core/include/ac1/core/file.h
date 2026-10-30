@@ -20,14 +20,11 @@ namespace core {
 //   ★ 0 覆盖一整集形态：参数非法 / 打不开（不存在、无权限、被独占）/ 尺寸读不出 /
 //     **0 字节** / 超过 maxBytes（不截断）/ 分配失败 / ReadFile 失败或读不满。
 //     调用方**不得**据 0 断言「文件不存在」，也别读 GetLastError 区分——超限与分配
-//     失败分支不设置错误码；要区分请自行 file_exists() 或探测尺寸。
+//     失败分支不设置错误码；要区分请自行查询文件属性或尺寸。
 bool file_read_all(const char* path, unsigned char** out, int* outN, int maxBytes);
 
 // 释放 file_read_all 交出的缓冲。
 void file_free(void* p);
-
-// 文件是否存在（可读）。用于「词典在不在」「清单在不在」这类前置判定。
-bool file_exists(const char* path);
 
 // 目录 + 文件名 → 路径。dir 末尾有没有反斜杠都行；装不下返回 0（out 内容未定义，
 // 调用方应按失败处理并写日志）。

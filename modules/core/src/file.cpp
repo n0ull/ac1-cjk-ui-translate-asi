@@ -53,12 +53,6 @@ void file_free(void* p)
     if (p) HeapFree(GetProcessHeap(), 0, p);
 }
 
-bool file_exists(const char* path)
-{
-    if (!path || !path[0]) return false;
-    return GetFileAttributesA(path) != INVALID_FILE_ATTRIBUTES;
-}
-
 bool path_join(char* out, int cap, const char* dir, const char* name)
 {
     if (!out || cap <= 0) return false;

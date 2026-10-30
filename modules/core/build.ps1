@@ -2,8 +2,7 @@
 #
 #   pwsh -NoProfile -File modules\core\build.ps1
 #
-# core 依赖：无（只用 Win32 + CRT + vendored MinHook）。本脚本刻意不引用任何公共环境脚本 ——
-# 每个模块都必须能被单独拎出去编，所以 cl 环境这段在这里是自包含的。
+# core 依赖：无（只用 Win32 + CRT + vendored MinHook）。
 #
 # MinHook（BSD，third_party/minhook/）在本模块编译进 core.lib，全仓库唯一一份。
 #   它是进程全局单例（g_hooks 一张表、MH_Initialize 全进程只成功一次）；
@@ -11,9 +10,6 @@
 param([string[]]$Defines = @(), [string]$OutDir = '')
 
 $ErrorActionPreference = 'Stop'
-$VC  = 'C:\Program Files (x86)\Microsoft Visual Studio\2022\BuildTools\VC\Tools\MSVC\14.44.35207'
-$SDK = 'C:\Program Files (x86)\Windows Kits\10'
-$V   = '10.0.26100.0'
 
 $here = Split-Path -Parent $MyInvocation.MyCommand.Path
 if (-not $OutDir) { $OutDir = Join-Path $here 'out' }
@@ -43,12 +39,10 @@ third_party\minhook 是 **git submodule**，全新 clone 后是空目录。
     }
 }
 
-$env:PATH    = "$VC\bin\Hostx64\x86;$env:PATH"
-$env:INCLUDE = "$VC\include;$SDK\Include\$V\ucrt;$SDK\Include\$V\shared;$SDK\Include\$V\um;$SDK\Include\$V\winrt"
-$env:LIB     = "$VC\lib\x86;$SDK\Lib\$V\ucrt\x86;$SDK\Lib\$V\um\x86"
+. "$root/tools/modules/native-toolchain.ps1"
 
 # 只编本模块自己的 src/，公开头在 include/。不会碰其它模块的任何文件。
-$sources = @('src\log.cpp', 'src\mem.cpp', 'src\hook.cpp', 'src\host.cpp', 'src\str.cpp', 'src\ctr.cpp', 'src\file.cpp', 'src\trace.cpp')
+$sources = @('src\log.cpp', 'src\mem.cpp', 'src\hook.cpp', 'src\host.cpp', 'src\str.cpp', 'src\ctr.cpp', 'src\file.cpp', 'src\trace.cpp', 'src\runtime_package.cpp')
 $flags = @('/nologo','/c','/O2','/MT','/EHsc','/W3','/utf-8','/GS','/D_CRT_SECURE_NO_WARNINGS')
 
 Push-Location $here

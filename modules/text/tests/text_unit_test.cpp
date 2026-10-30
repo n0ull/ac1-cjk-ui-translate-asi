@@ -13,6 +13,7 @@
 
 #include "ac1/core/log.h"
 #include "ac1/core/mem.h"
+#include "ac1/core/host.h"
 #include "ac1/dict/dict.h"
 
 #include <windows.h>
@@ -22,6 +23,15 @@
 
 using namespace ac1::text;
 
+namespace ac1 { namespace core {
+HostFlavor host_flavor() { return HOST_FLAVOR_DX9; }
+unsigned long host_crc32() { return 0; }
+unsigned host_base() { return 0; }
+const char* host_flavor_name() { return "Dx9 fixture"; }
+}}
+static const unsigned kUiCaller = 0x492EC7;
+static bool g_resourcesReady = true;
+static bool resources_ready() { return g_resourcesReady; }
 static int g_pass = 0, g_fail = 0;
 
 static void check(bool ok, const char* name, const char* detail = "")
@@ -84,75 +94,44 @@ static wchar_t* make_ws(FakeWs* w, const wchar_t* s, unsigned res)
                                     : (wchar_t*)(*(void**)(w->raw + AC1_WSTR_OFF_BX));
 }
 
-// 灌一份合成主词典：Start Game→開始遊戲 / Short→短 / Go→8 码元译文（装不下 res=7 的 SSO）
-static bool write_fake_dict(const char* path)
-{
-    FILE* f = fopen(path, "wb");
-    if (!f) return false;
-    auto put_big5 = [&](const wchar_t* s) {
-        int n = WideCharToMultiByte(950, 0, s, -1, NULL, 0, NULL, NULL);
-        if (n <= 1) return;
-        char* b = (char*)malloc((size_t)n);
-        if (WideCharToMultiByte(950, 0, s, -1, b, n, NULL, NULL) > 1) fwrite(b, 1, (size_t)n - 1, f);
-        free(b);
-    };
-    fputs("xfhsm_res_ENG_Start\r\nStart Game\r\nxfhsm_res_ENG_End\r\n", f);
-    fputs("xfhsm_res_CHI_Start\r\n", f);
-    put_big5(L"開始遊戲");
-    fputs("\r\nxfhsm_res_CHI_End\r\n", f);
-    fputs("xfhsm_res_ENG_Start\r\nShort\r\nxfhsm_res_ENG_End\r\n", f);
-    fputs("xfhsm_res_CHI_Start\r\n", f);
-    put_big5(L"短"); // 只有 1 个码元
-    fputs("\r\nxfhsm_res_CHI_End\r\n", f);
-    fputs("xfhsm_res_ENG_Start\r\nGo\r\nxfhsm_res_ENG_End\r\n", f);
-    fputs("xfhsm_res_CHI_Start\r\n", f);
-    put_big5(L"開始遊戲結束遊戲"); // 8 码元
-    fputs("\r\nxfhsm_res_CHI_End\r\n", f);
-    fclose(f);
-    return true;
-}
-
 // ================= 1. 闸门 =================
 static void test_gates()
 {
-    printf("\n[1] 闸门：结构不可信 / 空串 / 含CJK / 词典未就绪\n");
+    printf("\n[1] 闸门：结构不可信 / 空串 / 同值 / 词典未就绪\n");
     FakeWs w;
 
     int h0 = counters().hits, s0 = skipped(counters());
 
-    funnel_run_post(NULL, 0x1111);
+    funnel_run_post(NULL, kUiCaller);
     check(counters().hits == h0 + 1, "每次调用都记 hits（哪怕 dst 是 NULL）");
     check(skipped(counters()) == s0 + 1, "dst=NULL 被当作结构不可信跳过");
 
     // 词典此刻还没装（ready=false）⇒ 任何像样的串都应走"词典未就绪"闸门
     make_ws(&w, L"Start Game", 15);
     s0 = skipped(counters());
-    funnel_run_post(&w, 0x2222);
+    funnel_run_post(&w, kUiCaller);
     check(skipped(counters()) == s0 + 1, "词典未就绪 ⇒ skipped++（不崩溃、不写）");
     check(ac1::dict::ready() == false, "此刻词典确实未就绪");
 
     // 词典就绪之后，空串仍应被跳过
-    char dp[MAX_PATH];
-    path_in_dir(dp, sizeof(dp), "_text_ut_dict.txt");
-    if (!write_fake_dict(dp)) {
-        check(false, "写合成词典", dp);
-        return;
-    }
-    check(ac1::dict::load_main(dp) == 3, "合成词典载入 3 个键");
+    const unsigned char input[] =
+        "Start Game\t開始遊戲\nShort\t短\nGo\t開始遊戲結束遊戲\n開始遊戲\t開始遊戲\n";
+    check(ac1::dict::init_bytes(input, sizeof(input) - 1) && ac1::dict::stats().keys == 4,
+          "包内字节入口载入 4 个键");
     check(ac1::dict::ready(), "载入后词典就绪");
 
     make_ws(&w, L"", 15);
     s0 = skipped(counters());
-    funnel_run_post(&w, 0x3333);
+    funnel_run_post(&w, kUiCaller);
     check(skipped(counters()) == s0 + 1, "空串被跳过");
 
-    // 幂等闸门：串里已经有 CJK ⇒ 不重复翻译
+    // 精确同值命中无需写入，与文字系统无关。
     make_ws(&w, L"開始遊戲", 15);
     s0 = skipped(counters());
     int m0 = counters().miss, r0 = counters().replaced;
-    funnel_run_post(&w, 0x4444);
-    check(skipped(counters()) == s0 + 1, "含 CJK 的串被幂等跳过");
-    check(counters().miss == m0 && counters().replaced == r0, "含 CJK 的串既不算未命中也不算替换");
+    funnel_run_post(&w, kUiCaller);
+    check(skipped(counters()) == s0 + 1, "同值命中跳过写入");
+    check(counters().miss == m0 && counters().replaced == r0, "同值命中不算未命中或替换");
 }
 
 // ================= 2. 命中与未命中 =================
@@ -163,25 +142,25 @@ static void test_hit_miss()
 
     int m0 = counters().miss;
     make_ws(&w, L"No Such Key", 15);
-    funnel_run_post(&w, 0x5555);
+    funnel_run_post(&w, kUiCaller);
     check(counters().miss == m0 + 1, "词典里没有的串 ⇒ miss++");
     check(counters().replaced == 0, "未命中不替换");
 
     int m1 = counters().miss;
     make_ws(&w, L"Start Game", 15);
-    funnel_run_post(&w, 0x6666);
+    funnel_run_post(&w, kUiCaller);
     check(counters().miss == m1, "命中的串不计入未命中");
 
     // 短译文装得下：SSO res=7，译文 1 码元 ⇒ 不该计入容量不足
     int g0 = counters().skippedGrow;
     make_ws(&w, L"Short", 7);
-    funnel_run_post(&w, 0x7777);
+    funnel_run_post(&w, kUiCaller);
     check(counters().skippedGrow == g0, "短译文装得下 ⇒ 不计入容量不足");
 
     // 真正的容量不足：源串 "Go"(2 码元) 装得进 SSO(res=7)，但译文 8 码元 > 7
     g0 = counters().skippedGrow;
     make_ws(&w, L"Go", 7);
-    funnel_run_post(&w, 0x8888);
+    funnel_run_post(&w, kUiCaller);
 #if TEXT_REPLACE
     check(counters().skippedGrow == g0 + 1, "译文装不下（res=7 < 8 码元）⇒ skippedGrow++");
 #else
@@ -197,7 +176,7 @@ static void test_hit_miss()
     *(unsigned*)(bad.raw + AC1_WSTR_OFF_SIZE) = 99; // 伪造一个不一致的 _Mysize
     int s0 = skipped(counters());
     g0 = counters().skippedGrow;
-    funnel_run_post(&bad, 0x9999);
+    funnel_run_post(&bad, kUiCaller);
     check(skipped(counters()) == s0 + 1 && counters().skippedGrow == g0,
           "_Mysize > _Myres 的对象被视图拒（不算容量不足）");
 }
@@ -213,7 +192,7 @@ static void test_replace()
     unsigned resBefore = *(unsigned*)(w.raw + AC1_WSTR_OFF_RES);
     int      r0 = counters().replaced;
 
-    funnel_run_post(&w, 0x9999);
+    funnel_run_post(&w, kUiCaller);
     unsigned sizeAfter = *(unsigned*)(w.raw + AC1_WSTR_OFF_SIZE);
     unsigned resAfter = *(unsigned*)(w.raw + AC1_WSTR_OFF_RES);
 
@@ -232,27 +211,35 @@ static void test_replace()
     (void)resBefore;
 }
 
-// ================= 3b. forge 闸门：闸门关 ⇒ 文本层只观测不替换（真·纯原版）=================
-static void test_forge_gate_text()
+// Resource readiness gates text mutation independently of dictionary hits.
+static void test_resource_gate_text()
 {
-    printf("\n[3b] forge 闸门（文本层进闸，选 B）\n");
+    printf("\n[3b] 资源就绪闸门\n");
 
-    set_forge_patch(0);
+    set_runtime_resources(NULL);
+    FakeWs unbound;
+    wchar_t* original = make_ws(&unbound, L"Start Game", 15);
+    const int before = counters().replaced;
+    funnel_run_post(&unbound, kUiCaller);
+    check(wcscmp(original, L"Start Game") == 0 && counters().replaced == before,
+          "unbound resource callback preserves text");
+    set_runtime_resources(resources_ready);
+    g_resourcesReady = false;
     {
         FakeWs   w;
         wchar_t* buf = make_ws(&w, L"Start Game", 15);
         int      r0 = counters().replaced;
-        funnel_run_post(&w, 0x9999);
+        funnel_run_post(&w, kUiCaller);
         check(wcscmp(buf, L"Start Game") == 0, "闸门关：缓冲一个字节都没动（真·纯原版）");
         check(counters().replaced == r0, "闸门关：replaced 不涨（即使 TEXT_REPLACE=1 也一样）");
     }
 
-    set_forge_patch(1); // 恢复（也验证闸门可逆）
+    g_resourcesReady = true;
     {
         FakeWs   w;
         wchar_t* buf = make_ws(&w, L"Start Game", 15);
         int      r0 = counters().replaced;
-        funnel_run_post(&w, 0x9999);
+        funnel_run_post(&w, kUiCaller);
 #if TEXT_REPLACE
         check(counters().replaced == r0 + 1, "闸门开：恢复替换（replaced++）");
         check(wcscmp(buf, L"開始遊戲") == 0, "闸门开：缓冲里是译文");
@@ -271,12 +258,12 @@ static void test_idempotent()
     int    r0 = counters().replaced;
 
     make_ws(&w, L"Short", 7);
-    funnel_run_post(&w, 0xAAAA);
-    funnel_run_post(&w, 0xAAAA); // 第二遍：串里已是 CJK
+    funnel_run_post(&w, kUiCaller);
+    funnel_run_post(&w, kUiCaller);
 
     wchar_t* buf = (wchar_t*)(w.raw + AC1_WSTR_OFF_BX);
 #if TEXT_REPLACE
-    check(counters().replaced == r0 + 1, "TEXT_REPLACE=1：只翻一次，第二遍被 CJK 闸门拦住");
+    check(counters().replaced == r0 + 1, "TEXT_REPLACE=1：第二遍未命中，保持目标内容");
     check(wcscmp(buf, L"短") == 0, "TEXT_REPLACE=1：第二遍没有把译文当原文再翻一次");
 #else
     check(counters().replaced == r0, "TEXT_REPLACE=0：两遍都不替换");
@@ -291,7 +278,7 @@ static void test_fault_and_install()
     int f0 = counters().fault;
 
     // 完全不可信的地址：必须被读门/视图挡下，而不是崩
-    funnel_run_post((void*)0x10, 0xBBBB);
+    funnel_run_post((void*)0x10, kUiCaller);
     check(counters().fault == f0, "野地址被读门挡下（不产生异常、不崩）");
     check(ac1::core::mem_faults() == 0, "core 读门异常计数 = 0");
 
@@ -304,8 +291,7 @@ static void test_fault_and_install()
     printf("  状态行: %s\n", s);
 }
 
-// ================= 6. 观测粒度：跳过分项 / 未命中分类 / ASCII Top =================
-// 造一个含 ≥0x80 但 <0x3000 码元的串（图标转义类：过 CJK 闸门，但算"非 ASCII"）
+// ================= 6. 观测粒度：跳过分项 / 未命中分类 / Top =================
 static wchar_t* make_icon_ws(FakeWs* w, unsigned short icon, const wchar_t* rest)
 {
     memset(w, 0, sizeof(w->raw));
@@ -326,24 +312,24 @@ static void test_observation_granularity()
     const TextCounters& k = counters();
 
     // ---- ① 跳过分项：逐个闸门验自己的桶，而不是只验总数 ----
-    int    e0 = k.skipEmpty, j0 = k.skipCjk, d0 = k.skipDictNotReady, b0 = k.skipBadView;
+    int    e0 = k.skipEmpty, j0 = k.skipUnchanged, b0 = k.skipBadView;
     FakeWs w;
 
     make_ws(&w, L"", 15);
-    funnel_run_post(&w, 0xC001);
+    funnel_run_post(&w, kUiCaller);
     check(counters().skipEmpty == e0 + 1, "空串 ⇒ skipEmpty++");
 
-    make_ws(&w, L"開始遊戲", 15); // 含 CJK
-    funnel_run_post(&w, 0xC002);
-    check(counters().skipCjk == j0 + 1, "含 CJK ⇒ skipCjk++");
+    make_ws(&w, L"開始遊戲", 15);
+    funnel_run_post(&w, kUiCaller);
+    check(counters().skipUnchanged == j0 + 1, "同值命中 ⇒ skipUnchanged++");
 
-    funnel_run_post((void*)0x10, 0xC003); // 结构不可信
+    funnel_run_post((void*)0x10, kUiCaller); // 结构不可信
     check(counters().skipBadView == b0 + 1, "野地址 ⇒ skipBadView++");
 
     // ---- ② 状态行必须真的把跳分开成这几个标签 ----
     const char* st = status_line();
     check(strstr(st, "跳过=空串") != NULL, "状态行含「跳过=空串」", st);
-    check(strstr(st, "含CJK") != NULL, "状态行含「含CJK」", st);
+    check(strstr(st, "同值") != NULL, "状态行含「同值」", st);
     check(strstr(st, "词典未就绪") != NULL, "状态行含「词典未就绪」", st);
     check(strstr(st, "结构不可信") != NULL, "状态行含「结构不可信」", st);
     check(strstr(st, "非ASCII") != NULL, "状态行含未命中的「非ASCII」分类", st);
@@ -353,41 +339,41 @@ static void test_observation_granularity()
     int a0 = counters().missAscii, na0 = counters().missNonAscii, t0 = counters().topCount;
 
     make_ws(&w, L"Missing Alpha", 15); // 纯 ASCII，未命中
-    funnel_run_post(&w, 0xC004);
+    funnel_run_post(&w, kUiCaller);
     check(counters().missAscii == a0 + 1, "纯 ASCII 未命中 ⇒ missAscii++");
     check(counters().missNonAscii == na0, "纯 ASCII 不算进 missNonAscii");
     check(counters().topCount == t0 + 1, "纯 ASCII 未命中 ⇒ 进 Top 列表");
 
     int t1 = counters().topCount;
     make_ws(&w, L"Missing Alpha", 15); // 同一串再来一次 ⇒ 去重
-    funnel_run_post(&w, 0xC005);
+    funnel_run_post(&w, kUiCaller);
     check(counters().topCount == t1, "Top 列表去重（同串不重复占位）");
     check(counters().missAscii == a0 + 2, "但计数照常累加");
 
     make_icon_ws(&w, 0x00A4, L"icon"); // 含 0x00A4 码位
     int t2 = counters().topCount;
-    funnel_run_post(&w, 0xC006);
+    funnel_run_post(&w, kUiCaller);
     check(counters().missNonAscii == na0 + 1, "含 ≥0x80 码位 ⇒ missNonAscii++");
-    check(counters().topCount == t2, "非 ASCII 未命中不进 Top（图标转义类，本就不该翻）");
+    check(counters().topCount == t2 + 1, "非 ASCII 未命中同样进入 Top");
 
     // ---- ④ Top 列表的内容：\\uXXXX 转义、首次出现顺序、每条 ≤24 码元 ----
     make_ws(&w, L"Zebra Last", 15);
-    funnel_run_post(&w, 0xC007);
+    funnel_run_post(&w, kUiCaller);
     const char* det = detail_line();
     printf("  明细行样例: %s\n", det);
-    check(strstr(det, "未命中 ASCII Top") != NULL, "明细行标题正确", det);
+    check(strstr(det, "未命中 Top") != NULL, "明细行标题正确", det);
     check(strstr(det, "\\u004D") != NULL, "Top 用 \\uXXXX 转义（Missing Alpha 的 M）", det);
     // 首次出现顺序：Missing Alpha 在 Zebra Last 之前
     const char* a = strstr(det, "\\u004D");
     const char* z = strstr(det, "\\u005A");
     check(a && z && a < z, "Top 按首次出现顺序（Missing Alpha 早于 Zebra Last）", det);
-    check(strstr(det, "\\u00A4") == NULL, "非 ASCII 的那串不出现在 Top 里");
+    check(strstr(det, "\\u00A4") != NULL, "非 ASCII 的那串保留在 Top 里");
 
     // 超过 TOP_LEN(24) 的键要截断：造一条 40 字符的未命中串
     // （res 必须 ≥ 40，否则 wstr_view 会以 "_Mysize > _Myres" 拒掉它 —— 那本身也是被测行为）
     int tBefore = counters().topCount;
     make_ws(&w, L"0123456789012345678901234567890123456789", 45);
-    funnel_run_post(&w, 0xC008);
+    funnel_run_post(&w, kUiCaller);
     check(counters().missAscii > 0, "超长 ASCII 串确实走到未命中分支");
     check(counters().topCount == tBefore + 1, "超长未命中串仍然进 Top（截断后）");
     det = detail_line();
@@ -407,9 +393,9 @@ static void test_observation_granularity()
     // 这里验：唯一串去重 + 计数 + 标签 + 首次调用者；以及"跳过最新一条"两次 tick 才齐。
     {
         char invp[MAX_PATH];
-        { // 日志体系：inventory 产出 = AC1_CJK\strings_<run stamp>.txt（单测 stamp 为空）
+        { // 日志体系：inventory 产出 = AC1_Runtime\strings_<run stamp>.txt（单测 stamp 为空）
             char invname[96];
-            _snprintf(invname, sizeof(invname) - 1, "AC1_CJK\\strings_%s.txt", ac1::core::log_run_stamp());
+            _snprintf(invname, sizeof(invname) - 1, "AC1_Runtime\\strings_%s.txt", ac1::core::log_run_stamp());
             invname[sizeof(invname) - 1] = 0;
             path_in_dir(invp, sizeof(invp), invname);
         }
@@ -419,11 +405,11 @@ static void test_observation_granularity()
         make_ws(&w, L"Unique Alpha", 15); // 新串（未命中）
         // 堆形态的 _Myres 必须 ≥ 15：读门把 8..14 当"垃圾字段"拒掉（对齐真 wstring 的分配下限）
         int ma0 = counters().missAscii;
-        funnel_run_post(&w, 0xC101);
+        funnel_run_post(&w, kUiCaller);
         check(counters().missAscii == ma0 + 1,
               "Unique Alpha 确实走到未命中分支（否则下面的文件断言无从谈起）");
         make_ws(&w, L"Unique Alpha", 15); // 同一串再来一次 ⇒ 计数 +1、不新增条目
-        funnel_run_post(&w, 0xC102);
+        funnel_run_post(&w, kUiCaller);
         check(counters().missAscii == ma0 + 2, "第二次同样走到未命中分支");
 
         ac1::text::inventory_tick(g_dir); // tick#1：写出到 N-2
@@ -461,7 +447,7 @@ static void test_observation_granularity()
             check(strstr(buf, "# === run ") != NULL, "文件有 run 头", buf);
             check(strstr(buf, "Unique Alpha") != NULL, "含新登记的串（UTF-8 原文，不是 \\uXXXX）", buf);
             check(strstr(buf, "[×2]") != NULL, "同一串两次 ⇒ 计数 [×2]", buf);
-            check(strstr(buf, "caller=0000C101") != NULL, "记首次调用者 caller=0000C101", buf);
+            check(strstr(buf, "caller=00492EC7") != NULL, "记首次调用者 caller=00492EC7", buf);
             check(strstr(buf, "未命中") != NULL, "标签含「未命中」", buf);
             printf("  inventory 片段: %.200s\n",
                    strstr(buf, "Unique Alpha") ? strstr(buf, "Unique Alpha") : buf);
@@ -472,7 +458,7 @@ static void test_observation_granularity()
 // ================= 7. 样本行的截断收尾（dump_wstr） =================
 // 回归：≥86 码元的样本串会走到 dump_wstr 的截断收尾。旧实现原地 _snprintf 装不下时
 //   不补 NUL ⇒ 后面的『%s』越界读栈；新实现按尾标记长度预留缓冲、截断处必有 NUL。
-//   本用例把日志开到 out\AC1_CJK\ 并回读那一行（其余用例日志是关的）。
+//   本用例把日志开到 out\AC1_Runtime\ 并回读那一行（其余用例日志是关的）。
 static void test_sample_tail()
 {
     printf("\n[7] 样本行截断收尾（长串样本）\n");
@@ -490,7 +476,7 @@ static void test_sample_tail()
     make_ws(&w, longS, 255);
     const int miss0 = counters().miss;
     const int smp0 = counters().sampleMiss;
-    funnel_run_post(&w, 0x0040BEEF);
+    funnel_run_post(&w, kUiCaller);
     check(counters().miss == miss0 + 1, "200 码元长串按未命中计数（不在合成词典里）");
     check(counters().sampleMiss == smp0 + 1, "★ 长串落进未命中样本（样本预算未满）");
 
@@ -537,7 +523,7 @@ static DWORD WINAPI inv_conc_thread(LPVOID pv)
         wchar_t s[16];
         _snwprintf(s, 16, L"cc%d-%d", tid, i); // ≤7 码元 ⇒ SSO 形态，无需分配
         make_ws(&w, s, AC1_WSTR_SSO_RES - 1);  // _Myres = 7
-        funnel_run_post(&w, 0xC0B0u + (unsigned)tid);
+        funnel_run_post(&w, kUiCaller);
     }
     return 0;
 }
@@ -549,7 +535,7 @@ static void test_inventory_concurrency()
     char invp[MAX_PATH];
     {
         char invname[96];
-        _snprintf(invname, sizeof(invname) - 1, "AC1_CJK\\strings_%s.txt", ac1::core::log_run_stamp());
+        _snprintf(invname, sizeof(invname) - 1, "AC1_Runtime\\strings_%s.txt", ac1::core::log_run_stamp());
         invname[sizeof(invname) - 1] = 0;
         path_in_dir(invp, sizeof(invp), invname);
     }
@@ -607,32 +593,71 @@ static void test_inventory_concurrency()
     DeleteFileA(invp);
 }
 
+static void test_language_independent_replacement()
+{
+    const unsigned char input[] = "日本語\t開始\nPress\tOn\nOn\tOn\n";
+    check(ac1::dict::init_bytes(input, sizeof(input) - 1), "语言无关的词典夹具可加载");
+    FakeWs w;
+    wchar_t* target = make_ws(&w, L"日本語", 7);
+    funnel_run_post(&w, kUiCaller);
+#if TEXT_REPLACE
+    check(!wcscmp(target, L"開始"), "非拉丁源键通过相同漏斗替换");
+#else
+    check(!wcscmp(target, L"日本語"), "诊断模式保留非拉丁源键");
+#endif
+    target = make_ws(&w, L"Press", 7);
+    const int replaced = counters().replaced;
+    funnel_run_post(&w, kUiCaller);
+    funnel_run_post(&w, kUiCaller);
+#if TEXT_REPLACE
+    check(!wcscmp(target, L"On") && counters().replaced == replaced + 1,
+          "Latin 译文重复处理也只写入一次");
+#else
+    check(!wcscmp(target, L"Press") && counters().replaced == replaced,
+          "诊断模式不写入 Latin 译文");
+#endif
+    wchar_t* readonly = (wchar_t*)VirtualAlloc(NULL, 4096, MEM_RESERVE | MEM_COMMIT, PAGE_READWRITE);
+    check(readonly != NULL, "分配只读目标测试页");
+    if (!readonly) return;
+    wcscpy(readonly, L"On");
+    memset(&w, 0, sizeof(w));
+    *(wchar_t**)(w.raw + AC1_WSTR_OFF_BX) = readonly;
+    *(unsigned*)(w.raw + AC1_WSTR_OFF_SIZE) = 2;
+    *(unsigned*)(w.raw + AC1_WSTR_OFF_RES) = 15;
+    DWORD previous = 0;
+    check(VirtualProtect(readonly, 4096, PAGE_READONLY, &previous) != 0, "目标页设为只读");
+    const TextCounters before = counters();
+    funnel_run_post(&w, kUiCaller);
+    check(counters().skipUnchanged == before.skipUnchanged + 1 &&
+          counters().replaced == before.replaced && counters().fault == before.fault,
+          "同值命中在写门之前结束，不修改只读目标");
+    VirtualFree(readonly, 0, MEM_RELEASE);
+}
+
 int main()
 {
     setvbuf(stdout, NULL, _IONBF, 0); // 崩了也要留下最后跑到哪一步的输出
     exe_dir();
     ac1::core::init_log("");  // 关日志：单测不写文件
-    ac1::dict::set_log(NULL); // dict 的日志出口也不接
+    ac1::dict::set_log(NULL, NULL); // dict 的日志出口也不接
     SetConsoleOutputCP(65001);
 
     printf("ac1-chinese-translate text 层单测（链接 core+dict+text）\n");
     printf("TEXT_REPLACE=%d  工作目录: %s\n", TEXT_REPLACE, g_dir);
 
+    set_runtime_resources(resources_ready);
     test_gates();
     test_hit_miss();
     test_replace();
-    test_forge_gate_text();
+    test_resource_gate_text();
     test_idempotent();
     test_fault_and_install();
     test_observation_granularity();
     test_sample_tail();
+    test_language_independent_replacement();
     // 必须排在最后：本用例灌 400 条未命中会把未命中样本预算（SAMPLE_N）吃光，
     //   而 test_sample_tail 依赖那个预算还有余量。
     test_inventory_concurrency();
-
-    char dp[MAX_PATH];
-    path_in_dir(dp, sizeof(dp), "_text_ut_dict.txt");
-    DeleteFileA(dp);
 
     printf("\n==== 通过 %d / 失败 %d ====\n", g_pass, g_fail);
     return g_fail ? 1 : 0;

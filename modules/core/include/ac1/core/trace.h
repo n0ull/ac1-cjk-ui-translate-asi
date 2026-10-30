@@ -55,7 +55,7 @@ struct HookPolicy {
     int logBudget; // 明细行总上限；<=0 表示不限
 };
 
-// 登记一个钩。返回槽位（>=0），重复登记同名返回已有槽位。
+// 登记一个钩。返回槽位（>=0），同名返回已有槽位、不覆盖策略；槽满返回 -1。
 // 必须在该钩可能被调用之前完成（core 的 hook_install_one 成功时会自动登记）。
 // 可在任意线程调用：冷路径，内部串行化；热路径（enter/leave）与 veh_dump 不上锁。
 int hooktrace_register(const char* name, HookPolicy p);
@@ -80,11 +80,6 @@ void hooktrace_dump_now(const char* reason);
 void hooktrace_shutdown();
 
 // ---- 只读观测 ----
-
-// 幂等地确保已登记：已登记则原样保留并返回现有槽位（不覆盖策略）。
-// core 的安装器在落钩成功时用它自动登记 ⇒ 凡是 core 装上的钩一定在册。
-// 返回 -1 = 槽位已满（此时只是不追踪，功能不受影响）。
-int hooktrace_ensure(const char* name, HookPolicy p);
 
 // 默认策略：进面包屑栈（崩溃时可见）+ 不打明细行。
 // 热钩可以先登记一个 track=0 的策略把它降级成「只计数」。

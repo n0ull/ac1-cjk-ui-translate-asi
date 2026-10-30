@@ -1,4 +1,4 @@
-# app —— 装配层 → out\ac1_cjk.asi
+# app —— 装配层 → out\ac1_runtime_package.asi
 #
 #   pwsh -NoProfile -File app\build.ps1
 #
@@ -7,16 +7,13 @@
 #     modules\dict\out\dict.lib
 #     modules\text\out\text.lib
 #     modules\glyph\out\glyph.lib
-#   没有任何一个模块的 .cpp 被直接编进来。运行时零 D3D 调用 ⇒ 只链系统库。
+#   没有任何一个模块的 .cpp 被直接编进来。运行时借用引擎资源流程 ⇒ 只链系统库。
 #
 # /MT = 静态 CRT ⇒ 不需要 VC 运行时 redist；
 # 产物只依赖 KERNEL32.dll（dumpbin /imports 实测，无其它导入项，依赖清单见 AGENTS.md）。
-param([string[]]$Defines = @(), [string]$OutDir = '', [string]$AsiName = 'ac1_cjk.asi')
+param([string[]]$Defines = @(), [string]$OutDir = '', [string]$AsiName = 'ac1_runtime_package.asi')
 
 $ErrorActionPreference = 'Stop'
-$VC  = 'C:\Program Files (x86)\Microsoft Visual Studio\2022\BuildTools\VC\Tools\MSVC\14.44.35207'
-$SDK = 'C:\Program Files (x86)\Windows Kits\10'
-$V   = '10.0.26100.0'
 
 $here  = Split-Path -Parent $MyInvocation.MyCommand.Path
 $root  = Split-Path -Parent $here                 # 仓库根
@@ -38,9 +35,7 @@ foreach ($m in @('core','dict','text','glyph')) {
     $libs += $l
 }
 
-$env:PATH    = "$VC\bin\Hostx64\x86;$env:PATH"
-$env:INCLUDE = "$VC\include;$SDK\Include\$V\ucrt;$SDK\Include\$V\shared;$SDK\Include\$V\um;$SDK\Include\$V\winrt"
-$env:LIB     = "$VC\lib\x86;$SDK\Lib\$V\ucrt\x86;$SDK\Lib\$V\um\x86"
+. "$root/tools/modules/native-toolchain.ps1"
 
 # 本脚本只编译 app\src\dllmain.cpp 这一个编译单元，其中的清单路径拼接走
 # core::path_join（带容量检查），不触碰 _snprintf 等弃用 CRT API
