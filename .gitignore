@@ -1,27 +1,53 @@
-# 构建产物
+# Private inputs, machine evidence and local working environments.
+/local/
+/.venv/
+.env
+.env.*
+!.env.example
+
+# Generated outputs and native intermediates.
+/build/
+/dist/
 out/
 **/out/
 *.obj
 *.exe
+*.dll
+*.asi
 *.pdb
 *.ilk
 *.exp
 __pycache__/
 *.pyc
+.ruff_cache/
 
-# 字体与烘焙产物（不分发；由用户自备/现场生成）
+# Owned resources, fonts, complete dictionaries and runtime captures.
+/input/
+/dictionary.tsv
+/data/dict*.txt
+/data/languages/*/dictionary.tsv
+/data/languages/*/notranslate.txt
 *.ttf
+*.otf
 *.ttc
-*.rgba
+*.xlsx
+*.bin
+*.bc2
 *.dds
-
-# 运行期产物
+*.rgba
+*.forge
+*.MagmaMftFile
+*.dmp
 *.log
+*.zip
+*.7z
 AC1_CJK/
-AC1_CJK_Glyphs.bin
-AC1_CJK_Forge.txt
-AC1_Dict.txt
+AC1_Runtime/
 
-# 临时
+# Editor and temporary files.
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
 *.tmp
 *.bak

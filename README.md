@@ -1,72 +1,46 @@
-# ac1-ui-translate-chinese
+# AC1 UI Translate
 
-Chinese (CJK-capable,but untested ja and kr,may work) UI translation mod for **Assassin's Creed** (2008, PC),
-covering both renderers (`AssassinsCreed_Dx9.exe` and `AssassinsCreed_Dx10.exe`).
+Runtime UI translation for **Assassin's Creed (2008, PC)**, supporting the Dx9 and Dx10 renderers.
 
-The mod replaces in-game UI text at runtime and injects the CJK glyphs those
-strings need: the original fonts contain no CJK glyphs, so the mod packs
-pre-baked glyph atlases into `DataPC.forge` (one-time, offline)(live replacement is much harder on dx10,but if you want to make this,[docs](docs/ENGINEERING.md) may can help you) and extends the
-engine's glyph tables in memory.
-
-**Note:** only tested for steam version and chinese. 
-
-## Features
-
-- Full UI text translation through a single verified text funnel
-- CJK glyph injection into all four game fonts (textpc / bold / techno / title)
-- Works on both the Dx9 and Dx10 renderers
+One `ac1_runtime_package.asi` loads one `AC1_Language.bin` containing a dictionary and four font atlases.
+Text is replaced before the game measures and lays it out. Game archives stay unchanged.
 
 ## Install
 
-1. Build the mod (**see release**,you don't need it).
-2. (Optional)Make a translate template if you dont have a finish dict.([lg patch](https://community.pcgamingwiki.com/files/file/3594-assassins-creed-chinese-localization-patches) is a chinese dict,but you can use it for other language)
-```
-cd tools
-python make_dict_template.py --dict input\LGCStringDict_01.txt --lang zh --prefill --out out\dict.txt
-```
-3. Unpacking `DataPC.forge` with AnvilToolkit, then Unpacking  `2_-_Game Bootstrap Settings.data`.
-4. Copy 265-268 to `tool/input/mft-dir`, 735-738(**need Save As dds**) to`tool/input/mft-dir`
-5. Bake the glyph atlases
-```
-cd tools
-python pack_glyphs.py --mft-dir input/mft-dir --dds-dir input/dds-dir --dict out\dict.txt --ttf input\fonts\NotoSansSC-VariableFont_wght.ttf --out out\glyphs --lang zh
-python rgba_to_dds.py --all
-```
-6. Repack 4 dds in AnvilToolkit. Run `tools/write_forge_sidecar.py --game "<game dir>"` to drop the
-   integrity sidecar.
-7. Copy `ac1_cjk.asi`, `AC1_CJK_Glyphs.bin` and your `AC1_Dict.txt`
-   (UTF-8, `English<TAB>译文`) into the game's `scripts\` folder
-   (an ASI loader such as Ultimate-ASI-Loader is required).
+1. Install a compatible x86 ASI loader that calls `InitializeASI`.
+2. Close the game. Put `ac1_runtime_package.asi` and your `AC1_Language.bin` in the game's `scripts/` directory.
+3. Start the game. To change languages, replace the bin while the game is closed and restart.
 
-**Note on the dictionary:** the source ships as `data/dict.txt` — copy it to
-`scripts\AC1_Dict.txt` (or bring your own in the same `ENG<TAB>译文` UTF-8 format).
+Python, Excel and source fonts are only needed to build a language package.
+Runtime logs are written to `scripts/AC1_Runtime/`.
 
-## Build from source
+## Make a language package
 
-Requirements: Visual Studio 2022 Build Tools (x86 toolchain), Python 3 +
-Pillow (for the offline glyph packer), a CJK font file for baking.
+Follow the [translator guide](docs/translate.md) to prepare game exports, translate an Excel workbook and build a bin.
+The translator toolkit includes the ASI and a precompiled dictionary checker. A source checkout needs the
+[checker build step](docs/development.md#dictionary-checker).
 
-```powershell
-pwsh -NoProfile -File build.ps1 -RunTests     # build
+```text
+tools/
+  lg_to_excel.py       LG dictionary → Excel translation sheet
+  pack_language.py     Excel + game exports + font → AC1_Language.bin
+  modules/             Implementation, dependencies and tests
 ```
 
-Output: `app\out\ac1_cjk.asi`.
+The repository includes optional Chinese and Japanese samples. Provide your own translations, game exports
+and the font matching your [font preset](docs/fonts.md). Samples are not required for your own package.
 
-## How it works (short version)
+## Develop
 
-- Four hooked engine points: one text funnel, three glyph hooks
-  (font load / charmap lookup / DrawText).
-- Atlases are baked offline and stored in `DataPC.forge` by the installer;
-  at runtime the game itself loads them — the mod never touches D3D.
-- A startup integrity check (forge size/CRC sidecar) gates every patch:
-  if the forge is restored (e.g. Steam verify), the mod goes fully inert.
+- [Build and test](docs/development.md)
+- [Add or calibrate a font preset](docs/fonts.md#add-a-preset)
+- [Runtime implementation](docs/ENGINEERING.md)
 
-Internals: see `docs/ENGINEERING.md`. 
+Supported hosts and text limitations are listed in [support limits](docs/fonts.md#support-limits).
+Full dictionaries, fonts, game resources and generated language packages are not included in the source repository.
 
-## License & credits
+## License
 
-- This project's code: MIT (see `LICENSE`).
-- [minhook](https://github.com/TsudaKageyu/minhook) (BSD-2-Clause), bundled
-  under `third_party/`.
-- Fonts used for baking are not redistributed; bring your own.
-- This is a fan-made mod, not affiliated with or endorsed by Ubisoft.
+Project code and original documentation: [MIT](LICENSE).
+See [third-party notices](THIRD_PARTY_NOTICES.md) for MinHook, fonts and game resources.
+This project is not affiliated with Ubisoft.

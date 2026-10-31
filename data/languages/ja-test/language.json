@@ -1,0 +1,79 @@
+{
+  "language_format_version": 1,
+  "language_id": "ja-test",
+  "baseline": "ac1-pc-v1",
+  "dictionary": "dictionary.sample.tsv",
+  "font_sha256": "c2f3b4d463500a2ddcd3849cded1fceeb9fd6d1c32e6cbecd568453ba50fc68f",
+  "extra_characters": {
+    "source_kind": "original_ui_text",
+    "source_text": "",
+    "codepoints": [],
+    "evidence": "Representative Japanese test corpus; original UI additions are not inferred from the Chinese package."
+  },
+  "fonts": [
+    {
+      "name": "bold",
+      "target_dimensions": [
+        1024,
+        1024
+      ],
+      "font_px": 24,
+      "advance": 29,
+      "font_baseline": 23,
+      "native_baseline": 26,
+      "density": 2,
+      "bake": "bold_cell",
+      "axes": {
+        "wght": 485
+      }
+    },
+    {
+      "name": "textpc",
+      "target_dimensions": [
+        512,
+        1024
+      ],
+      "font_px": 19,
+      "advance": 23,
+      "font_baseline": 19,
+      "native_baseline": 20,
+      "density": 2,
+      "bake": "padded_ink",
+      "axes": {
+        "wght": 515
+      }
+    },
+    {
+      "name": "techno",
+      "target_dimensions": [
+        512,
+        2048
+      ],
+      "font_px": 19,
+      "advance": 23,
+      "font_baseline": 19,
+      "native_baseline": 20,
+      "density": 2,
+      "bake": "padded_ink",
+      "axes": {
+        "wght": 385
+      }
+    },
+    {
+      "name": "title",
+      "target_dimensions": [
+        2048,
+        2048
+      ],
+      "font_px": 64,
+      "advance": 68,
+      "font_baseline": 0,
+      "native_baseline": 4,
+      "density": 2,
+      "bake": "padded_ink",
+      "axes": {
+        "wght": 320
+      }
+    }
+  ]
+}

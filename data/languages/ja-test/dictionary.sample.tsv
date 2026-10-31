@@ -1,0 +1,37 @@
+# Representative UI test corpus. These translations are test data, not a Japanese release.
+NEW	新しいゲーム
+CONTINUE	続きから
+OPTIONS	オプション
+EXIT	終了
+BACK	戻る
+Back	戻る
+GRAPHIC OPTIONS	グラフィック設定
+CUSTOMIZE CONTROLS	操作設定
+OPTIONS GRAPHIC	オプション\nグラフィック
+OPTIONS CUSTOMIZE	オプション\n操作設定
+>Resolution	>解像度
+>Multisampling	>アンチエイリアス
+>Shadows	>影
+>Vertical Sync	>垂直同期
+>Brightness	>明るさ
+>Post FX	>ポスト処理
+>Graphic Quality	>画質
+>Level of Detail	>詳細度
+>Apply	>設定を適用
+>Back	>戻る
+>Default	>初期設定に戻す
+>Controller	>入力機器
+Move Forward	前進
+Move Backward	後退
+Move Left	左へ移動
+Move Right	右へ移動
+High Profile	高姿勢
+Armed Hand	武器の手
+Open Hand	空き手
+Head	頭
+Feet	足
+Keyboard and Mouse (2 Buttons)	キーボードとマウス　（2 ボタン）
+Keyboard and Mouse (5 Buttons)	キーボードとマウス　（5 ボタン）
+按钮	ボタン
+按钮 0	ボタン 0
+按钮 1	ボタン 1

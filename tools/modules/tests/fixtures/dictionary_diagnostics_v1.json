@@ -1,0 +1,396 @@
+{
+  "format_version": 1,
+  "frozen_behavior_sha256": "5d5557221d3de81048abe457cd5a7f1fbe32598579a1a22c6be0293a99c2676d",
+  "cases": {
+    "basic": {
+      "result": "clean",
+      "reason": "none",
+      "rejected": 0,
+      "first_rejected_line": 0,
+      "failure_line": 0
+    },
+    "bom": {
+      "result": "clean",
+      "reason": "none",
+      "rejected": 0,
+      "first_rejected_line": 0,
+      "failure_line": 0
+    },
+    "comment_and_hash_key": {
+      "result": "clean",
+      "reason": "none",
+      "rejected": 0,
+      "first_rejected_line": 0,
+      "failure_line": 0
+    },
+    "canonical_whitespace": {
+      "result": "clean",
+      "reason": "none",
+      "rejected": 0,
+      "first_rejected_line": 0,
+      "failure_line": 0
+    },
+    "escapes": {
+      "result": "clean",
+      "reason": "none",
+      "rejected": 0,
+      "first_rejected_line": 0,
+      "failure_line": 0
+    },
+    "last_duplicate_wins": {
+      "result": "clean",
+      "reason": "none",
+      "rejected": 0,
+      "first_rejected_line": 0,
+      "failure_line": 0
+    },
+    "normalized_duplicate": {
+      "result": "clean",
+      "reason": "none",
+      "rejected": 0,
+      "first_rejected_line": 0,
+      "failure_line": 0
+    },
+    "same_duplicate": {
+      "result": "clean",
+      "reason": "none",
+      "rejected": 0,
+      "first_rejected_line": 0,
+      "failure_line": 0
+    },
+    "fallback": {
+      "result": "clean",
+      "reason": "none",
+      "rejected": 0,
+      "first_rejected_line": 0,
+      "failure_line": 0
+    },
+    "fallback_same_duplicate": {
+      "result": "clean",
+      "reason": "none",
+      "rejected": 0,
+      "first_rejected_line": 0,
+      "failure_line": 0
+    },
+    "maximum_key": {
+      "result": "clean",
+      "reason": "none",
+      "rejected": 0,
+      "first_rejected_line": 0,
+      "failure_line": 0
+    },
+    "maximum_value": {
+      "result": "clean",
+      "reason": "none",
+      "rejected": 0,
+      "first_rejected_line": 0,
+      "failure_line": 0
+    },
+    "fallback_at_limit": {
+      "result": "clean",
+      "reason": "none",
+      "rejected": 0,
+      "first_rejected_line": 0,
+      "failure_line": 0
+    },
+    "identical_duplicate_pool_rollback": {
+      "result": "clean",
+      "reason": "none",
+      "rejected": 0,
+      "first_rejected_line": 0,
+      "failure_line": 0
+    },
+    "value_pool_at_limit": {
+      "result": "clean",
+      "reason": "none",
+      "rejected": 0,
+      "first_rejected_line": 0,
+      "failure_line": 0
+    },
+    "key_pool_at_limit": {
+      "result": "clean",
+      "reason": "none",
+      "rejected": 0,
+      "first_rejected_line": 0,
+      "failure_line": 0
+    },
+    "key_count_at_limit": {
+      "result": "clean",
+      "reason": "none",
+      "rejected": 0,
+      "first_rejected_line": 0,
+      "failure_line": 0
+    },
+    "reinit_replaces_old": {
+      "result": "clean",
+      "reason": "none",
+      "rejected": 0,
+      "first_rejected_line": 0,
+      "failure_line": 0
+    },
+    "missing_tab": {
+      "result": "partial",
+      "reason": "malformed_row",
+      "rejected": 1,
+      "first_rejected_line": 2,
+      "failure_line": 0
+    },
+    "invalid_utf8_key_first": {
+      "result": "partial",
+      "reason": "invalid_utf8_key",
+      "rejected": 1,
+      "first_rejected_line": 1,
+      "failure_line": 0
+    },
+    "invalid_utf8_key_last": {
+      "result": "partial",
+      "reason": "invalid_utf8_key",
+      "rejected": 1,
+      "first_rejected_line": 2,
+      "failure_line": 0
+    },
+    "invalid_utf8_value_first": {
+      "result": "partial",
+      "reason": "invalid_utf8_value",
+      "rejected": 1,
+      "first_rejected_line": 1,
+      "failure_line": 0
+    },
+    "invalid_utf8_value_last": {
+      "result": "partial",
+      "reason": "invalid_utf8_value",
+      "rejected": 1,
+      "first_rejected_line": 2,
+      "failure_line": 0
+    },
+    "escaped_empty_value": {
+      "result": "partial",
+      "reason": "empty_value",
+      "rejected": 1,
+      "first_rejected_line": 2,
+      "failure_line": 0
+    },
+    "empty_duplicate_keeps_old": {
+      "result": "partial",
+      "reason": "empty_value",
+      "rejected": 1,
+      "first_rejected_line": 2,
+      "failure_line": 0
+    },
+    "empty_duplicate_before_valid": {
+      "result": "partial",
+      "reason": "empty_value",
+      "rejected": 1,
+      "first_rejected_line": 1,
+      "failure_line": 0
+    },
+    "cjk_key_skipped": {
+      "result": "partial",
+      "reason": "key_contains_cjk",
+      "rejected": 1,
+      "first_rejected_line": 2,
+      "failure_line": 0
+    },
+    "empty_input": {
+      "result": "rejected",
+      "reason": "empty_input",
+      "rejected": 0,
+      "first_rejected_line": 0,
+      "failure_line": 0
+    },
+    "reinit_empty_clears_old": {
+      "result": "rejected",
+      "reason": "empty_input",
+      "rejected": 0,
+      "first_rejected_line": 0,
+      "failure_line": 0
+    },
+    "only_comments": {
+      "result": "rejected",
+      "reason": "no_effective_entries",
+      "rejected": 0,
+      "first_rejected_line": 0,
+      "failure_line": 0
+    },
+    "escaped_nul": {
+      "result": "rejected",
+      "reason": "unsupported_value_unit",
+      "rejected": 1,
+      "first_rejected_line": 2,
+      "failure_line": 2
+    },
+    "raw_nul": {
+      "result": "rejected",
+      "reason": "unsupported_value_unit",
+      "rejected": 1,
+      "first_rejected_line": 2,
+      "failure_line": 2
+    },
+    "escaped_surrogate": {
+      "result": "rejected",
+      "reason": "unsupported_value_unit",
+      "rejected": 1,
+      "first_rejected_line": 2,
+      "failure_line": 2
+    },
+    "astral_scalar": {
+      "result": "rejected",
+      "reason": "unsupported_value_unit",
+      "rejected": 1,
+      "first_rejected_line": 2,
+      "failure_line": 2
+    },
+    "unsupported_control": {
+      "result": "rejected",
+      "reason": "unsupported_value_unit",
+      "rejected": 1,
+      "first_rejected_line": 2,
+      "failure_line": 2
+    },
+    "unsupported_overridden_value": {
+      "result": "rejected",
+      "reason": "unsupported_value_unit",
+      "rejected": 1,
+      "first_rejected_line": 1,
+      "failure_line": 1
+    },
+    "reinit_invalid_clears_old": {
+      "result": "rejected",
+      "reason": "unsupported_value_unit",
+      "rejected": 1,
+      "first_rejected_line": 1,
+      "failure_line": 1
+    },
+    "key_over_limit": {
+      "result": "rejected",
+      "reason": "key_too_long",
+      "rejected": 1,
+      "first_rejected_line": 2,
+      "failure_line": 2
+    },
+    "value_over_limit": {
+      "result": "rejected",
+      "reason": "value_too_long",
+      "rejected": 1,
+      "first_rejected_line": 2,
+      "failure_line": 2
+    },
+    "fallback_over_limit": {
+      "result": "rejected",
+      "reason": "fallback_full",
+      "rejected": 1,
+      "first_rejected_line": 2,
+      "failure_line": 2
+    },
+    "override_value_pool_exhaustion": {
+      "result": "rejected",
+      "reason": "value_pool_full",
+      "rejected": 4,
+      "first_rejected_line": 17,
+      "failure_line": 17
+    },
+    "value_pool_exhaustion": {
+      "result": "rejected",
+      "reason": "value_pool_full",
+      "rejected": 1,
+      "first_rejected_line": 17,
+      "failure_line": 17
+    },
+    "key_pool_exhaustion": {
+      "result": "rejected",
+      "reason": "key_capacity_full",
+      "rejected": 1,
+      "first_rejected_line": 49,
+      "failure_line": 49
+    },
+    "key_count_exhaustion": {
+      "result": "rejected",
+      "reason": "key_capacity_full",
+      "rejected": 1,
+      "first_rejected_line": 6145,
+      "failure_line": 6145
+    },
+    "source_over_limit": {
+      "result": "rejected",
+      "reason": "input_too_large",
+      "rejected": 0,
+      "first_rejected_line": 0,
+      "failure_line": 0
+    }
+  },
+  "retained_counters": {
+    "only_comments": {
+      "comments": 1,
+      "empty": 1
+    },
+    "escaped_nul": {
+      "lines": 2,
+      "new": 1
+    },
+    "raw_nul": {
+      "lines": 2,
+      "new": 1
+    },
+    "escaped_surrogate": {
+      "lines": 2,
+      "new": 1
+    },
+    "astral_scalar": {
+      "lines": 2,
+      "new": 1
+    },
+    "unsupported_control": {
+      "lines": 2,
+      "new": 1
+    },
+    "unsupported_overridden_value": {
+      "lines": 1
+    },
+    "reinit_invalid_clears_old": {
+      "lines": 1
+    },
+    "key_over_limit": {
+      "lines": 2,
+      "new": 1,
+      "key_long": 1
+    },
+    "value_over_limit": {
+      "lines": 2,
+      "new": 1,
+      "value_long": 1
+    },
+    "fallback_over_limit": {
+      "lines": 2,
+      "new": 1,
+      "fallback_full": 1
+    },
+    "override_value_pool_exhaustion": {
+      "lines": 20,
+      "new": 1,
+      "overrides": 15,
+      "pool_full": 4
+    },
+    "value_pool_exhaustion": {
+      "lines": 17,
+      "new": 16,
+      "pool_full": 1
+    },
+    "key_pool_exhaustion": {
+      "lines": 49,
+      "new": 48,
+      "key_full": 1
+    },
+    "key_count_exhaustion": {
+      "lines": 6145,
+      "new": 6144,
+      "key_full": 1
+    }
+  },
+  "production": {
+    "result": "partial",
+    "reason": "key_contains_cjk",
+    "rejected": 23,
+    "first_rejected_line": 1299,
+    "failure_line": 0
+  }
+}

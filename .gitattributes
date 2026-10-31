@@ -1,0 +1,9 @@
+* text=auto
+*.md text eol=lf
+*.py text eol=lf
+# The byte-level fixture has a frozen SHA-256 and intentionally retains CRLF.
+tools/modules/tests/fixtures/dictionary_behavior_v1.json text eol=crlf
+*.bin binary
+*.asi binary
+*.ttf binary
+*.otf binary

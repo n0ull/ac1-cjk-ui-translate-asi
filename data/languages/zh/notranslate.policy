@@ -1,0 +1,6 @@
+# Offline review exclusions; not runtime translation rules.
+_Yes	内部键名（带下划线，不像界面文案）
+_No	内部键名（同上）
+N	碎片/键位名（单字母）
+lorem ipsum	填充占位文
+OBSOLETE: *	废弃项（前缀通配，覆盖 OBSOLETE: YES / NO / GEOGRAPHY / All Maps …）

@@ -1,0 +1,82 @@
+{
+  "language_format_version": 1,
+  "language_id": "zh",
+  "baseline": "ac1-pc-v1",
+  "dictionary": "dictionary.tsv",
+  "font_sha256": "6cbd3ac22ef454e4e9bcfb67369ea94297002a218e9abebc90852534afee096a",
+  "extra_characters": {
+    "source_kind": "original_ui_text",
+    "source_text": "按钮",
+    "codepoints": [
+      "U+6309",
+      "U+94AE"
+    ],
+    "evidence": "Native Dx9 custom-control button labels; docs/RUNTIME_READER.md"
+  },
+  "fonts": [
+    {
+      "name": "bold",
+      "target_dimensions": [
+        4096,
+        2048
+      ],
+      "font_px": 24,
+      "advance": 29,
+      "font_baseline": 23,
+      "native_baseline": 26,
+      "density": 2,
+      "bake": "bold_cell",
+      "axes": {
+        "wght": 485
+      }
+    },
+    {
+      "name": "textpc",
+      "target_dimensions": [
+        2048,
+        2048
+      ],
+      "font_px": 19,
+      "advance": 23,
+      "font_baseline": 19,
+      "native_baseline": 20,
+      "density": 2,
+      "bake": "padded_ink",
+      "axes": {
+        "wght": 515
+      }
+    },
+    {
+      "name": "techno",
+      "target_dimensions": [
+        2048,
+        4096
+      ],
+      "font_px": 19,
+      "advance": 23,
+      "font_baseline": 19,
+      "native_baseline": 20,
+      "density": 2,
+      "bake": "padded_ink",
+      "axes": {
+        "wght": 385
+      }
+    },
+    {
+      "name": "title",
+      "target_dimensions": [
+        4096,
+        8192
+      ],
+      "font_px": 64,
+      "advance": 68,
+      "font_baseline": 0,
+      "native_baseline": 4,
+      "density": 2,
+      "bake": "padded_ink",
+      "axes": {
+        "wght": 320
+      }
+    }
+  ]
+}

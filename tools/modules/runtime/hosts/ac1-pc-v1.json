@@ -1,0 +1,78 @@
+{
+  "baseline_format_version": 1,
+  "id": "ac1-pc-v1",
+  "hosts": {
+    "dx9": {
+      "exe": "AssassinsCreed_Dx9.exe",
+      "crc32": "E8936C99"
+    },
+    "dx10": {
+      "exe": "AssassinsCreed_Dx10.exe",
+      "crc32": "3AF8F9D0"
+    }
+  },
+  "max_package_bytes": 67108864,
+  "max_total_records_per_font": 4096,
+  "fonts": [
+    {
+      "name": "bold",
+      "mft": "mft/266_-_AnimusText Bold_PC.MagmaMftFile",
+      "mft_sha256": "8226e14c97375a2438af7714b72d1f2930d2076425a352f7b3bda9f04ab7d787",
+      "original_texture": "textures/bold.bc2",
+      "original_texture_sha256": "5d486d8ba958a963493fdff2f14473fc869f172d11fb9584699c5215161999d5",
+      "original_records_sha256": "0644a9327ee2dc9d702c2366945e963d079105ee56c63bd762ad3f200ae0b3b4",
+      "original_count": 199,
+      "asset_id": 1192843615,
+      "class_hash": 2729961751,
+      "original_dimensions": [
+        256,
+        512
+      ]
+    },
+    {
+      "name": "textpc",
+      "mft": "mft/268_-_AnimusText PC.MagmaMftFile",
+      "mft_sha256": "aa484280f602992c218b692ff110c4277826056f36fb8ff45d9027181a1dbecb",
+      "original_texture": "textures/textpc.bc2",
+      "original_texture_sha256": "b649695c7c35694d1e193e50ea3fbfaed7e40ad17df234e63afe6093dd77170a",
+      "original_records_sha256": "d94b27767aecc183cd12fffc5d47ebdd89bc680f7d6bbcffcd1caa1adeb95d04",
+      "original_count": 199,
+      "asset_id": 1192843606,
+      "class_hash": 2729961751,
+      "original_dimensions": [
+        256,
+        256
+      ]
+    },
+    {
+      "name": "techno",
+      "mft": "mft/265_-_AnimusTechno Regular 22_PC.MagmaMftFile",
+      "mft_sha256": "60ec641dc72bbd0e8c9314ec6069a3a4f941516d376c0e5638b9cbb10cc01f5b",
+      "original_texture": "textures/techno.bc2",
+      "original_texture_sha256": "8fb0e1b5841da7c26758efe28bd6824e7bb6a29e14850bfd8cc18d8c29bc7726",
+      "original_records_sha256": "dca523c61b4d3e9b133bcc0081add8abde71a2efcb8ec62a73ab97de7a3fa4d7",
+      "original_count": 198,
+      "asset_id": 1192843665,
+      "class_hash": 2729961751,
+      "original_dimensions": [
+        64,
+        1024
+      ]
+    },
+    {
+      "name": "title",
+      "mft": "mft/267_-_Animus Title.MagmaMftFile",
+      "mft_sha256": "dc11d1b41a4da177248d924276f2f62748ac0af15179613da31ff035ba3cacb8",
+      "original_texture": "textures/title.bc2",
+      "original_texture_sha256": "49cd6917755a9f23ae43f4a209cb943d43fe0dce549176a051e911a951d2fe5e",
+      "original_records_sha256": "9ca47af7c953f16025d8af481beb6cdb225a165d05cffbae0f39f73164518f13",
+      "original_count": 261,
+      "asset_id": 2279971308,
+      "class_hash": 2729961751,
+      "original_dimensions": [
+        512,
+        1024
+      ]
+    }
+  ]
+}
